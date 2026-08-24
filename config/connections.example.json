@@ -1,0 +1,6 @@
+[
+  {
+    "name": "Local SQL Server",
+    "connection_string": "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;DATABASE=MyDb;UID=sa;PWD=changeme;"
+  }
+]

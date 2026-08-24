@@ -1,0 +1,9 @@
+# DB connection strings, stored in plaintext by design (see engine/db.py) --
+# never commit real credentials.
+config/connections.json
+
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/

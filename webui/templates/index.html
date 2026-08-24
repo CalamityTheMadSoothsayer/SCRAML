@@ -1,0 +1,2423 @@
+<!doctype html>
+<html lang="en" data-theme="{{ ui_prefs.theme }}">
+<head>
+<meta charset="utf-8">
+<title>SCRAML</title>
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --panel-bg: #fff;
+    --text: #222;
+    --text-dim: #666;
+    --text-dimmer: #888;
+    --border: #d8dbe0;
+    --border-strong: #333;
+    --input-bg: #fff;
+    --dnd-bg: #fafbfc;
+    --hover-bg: #eef1f5;
+    --accent: #6d5ce8;
+    --accent-hi: #7c6cf0;
+    --accent-text: #fff;
+    --accent-bg: #efecfd;
+    --danger-bg: #f6dede;
+    --danger-text: #a33;
+    --btn-disabled-bg: #c3bcf5;
+    --collapse-btn-bg: #eee;
+    --collapse-btn-text: #333;
+    --inject-bg: #fff7e0;
+    --inject-border: #e0c060;
+  }
+  html[data-theme="dark"] {
+    --bg: #1b1d22;
+    --panel-bg: #24262c;
+    --text: #e7e8ea;
+    --text-dim: #a9adb4;
+    --text-dimmer: #8a8e96;
+    --border: #383b42;
+    --border-strong: #55585f;
+    --input-bg: #2c2f36;
+    --dnd-bg: #1f2126;
+    --hover-bg: #2c2f36;
+    --accent: #7c6cf0;
+    --accent-hi: #8b7cf6;
+    --accent-text: #fff;
+    --accent-bg: #322c56;
+    --danger-bg: #4a2b2b;
+    --danger-text: #ff9a9a;
+    --btn-disabled-bg: #423a6b;
+    --collapse-btn-bg: #33363d;
+    --collapse-btn-text: #e7e8ea;
+    --inject-bg: #3a3420;
+    --inject-border: #8a7233;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text);
+    display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto;
+  }
+  .panel { background: var(--panel-bg); border: 1px solid var(--border); border-radius: 10px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+  select, button {
+    font-size: 13px; padding: 9px 14px; border-radius: 6px; border: 1px solid var(--border-strong);
+    font-family: inherit;
+  }
+  select { background: var(--input-bg); color: var(--text); }
+  /* Every button (besides .btn-danger) is standard: background matches
+     the page, purple outline + text at rest, fills solid purple only on
+     hover -- so nothing sits there shouting all the time, including
+     buttons outside the toolbars (dialog Close, +Add Field, etc).
+     Wrapped in :where() so this whole block contributes ZERO
+     specificity -- any component that needs its own look (tab pills,
+     help icons, block controls, results tabs, ...) only needs a single
+     class selector to win, with no fight over declaration order or
+     needing its own :hover override just to not get clobbered by this
+     one. Without :where(), `button:hover:not(:disabled)` outranks a
+     plain one-class selector like `.help-icon:hover` (an element +
+     2 pseudo-classes beats 2 classes), which is exactly what silently
+     turned icons/tabs/block controls purple-on-hover before this. */
+  :where(button) {
+    cursor: pointer; background: var(--bg); color: var(--accent); border: 1px solid var(--accent);
+    font-weight: 600; transition: filter 0.1s ease, background 0.1s ease, border-color 0.1s ease, color 0.1s ease;
+  }
+  :where(button:hover:not(:disabled)) { background: var(--accent); color: #fff; filter: none; }
+  :where(button:disabled) { background: var(--bg); color: var(--text-dimmer); border-color: var(--border); cursor: not-allowed; }
+  /* Left exactly as it was -- delete buttons keep their existing look,
+     including their own hover (a brightness bump, not the new default
+     purple-fill hover every other button now gets). */
+  button.btn-danger { background: var(--danger-bg); color: var(--danger-text); border: none; }
+  button.btn-danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); filter: brightness(1.08); }
+  /* Baseline theming for every text/number input in the app -- more
+     specific rules further down (field rows, store-as tags, etc.) can
+     still override this, but nothing should be left showing the
+     browser's unstyled white default. */
+  input[type="text"], input[type="number"], input[type="search"] {
+    font-size: 13px; padding: 8px 10px; border-radius: 6px; border: 1px solid var(--border-strong);
+    background: var(--input-bg); color: var(--text);
+    /* Not just "inherit" (the body's UI sans-serif) -- a typed value
+       like a press_key "key" of I needs to stay visually distinct from
+       a lowercase l. Courier New's serifed capital I (present cross-
+       platform even when the nicer coding fonts ahead of it aren't
+       installed) guarantees that; the coding fonts are just a nicer-
+       looking first choice when available. */
+    font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace;
+  }
+  /* --- App shell: header / tabs / scrollable main area --- */
+  .app-header {
+    flex: none; display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 28px; background: var(--panel-bg); border-bottom: 1px solid var(--border);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08); z-index: 2;
+  }
+  .app-header-titles { display: flex; align-items: baseline; gap: 10px; }
+  .app-header h1 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: 0.2px; }
+  .app-header .app-version { font-size: 11px; color: var(--text-dimmer); font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; }
+
+  /* Header menu (currently just Theme) tucked behind a plain hamburger
+     icon instead of its own always-visible pill -- reuses the Queries
+     "..." menu's .q-more-wrap/.q-more-menu positioning/look. */
+  #header-menu-btn {
+    background: var(--bg); color: var(--text-dim); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px;
+  }
+  #header-menu-btn:hover:not(:disabled) { background: var(--hover-bg); color: var(--text); border-color: var(--border-strong); filter: none; }
+  /* #id, not .class -- .q-more-menu's own padding:4px rule is declared
+     later in this stylesheet (see the Queries "..." menu section) and
+     would otherwise win the tie against an equal-specificity class. */
+  #header-menu { padding: 8px 10px; }
+  .header-menu-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); white-space: nowrap; }
+  .header-menu-row .tb-icon { color: var(--text-dimmer); }
+  /* Scoped to .header-menu-row (not just .theme-switch) -- the switch is
+     a <button> inside .q-more-menu, whose own `.q-more-menu button`
+     rule (width: 100%, no padding, transparent background) is more
+     specific than a bare .theme-switch class and was winning, stretching
+     the switch to fill the whole row instead of rendering as a compact
+     pill. */
+  .header-menu-row .theme-switch {
+    position: relative; width: 38px; height: 20px; flex: none; padding: 0; display: block;
+    background: var(--border-strong); border: none; border-radius: 10px;
+  }
+  .header-menu-row .theme-switch:hover:not(:disabled) { background: var(--border-strong); filter: none; }
+  .theme-switch-thumb {
+    position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%;
+    background: #fff; transition: transform 0.15s ease;
+  }
+  .header-menu-row .theme-switch[aria-checked="true"] { background: var(--accent); }
+  .header-menu-row .theme-switch[aria-checked="true"]:hover:not(:disabled) { background: var(--accent-hi); }
+  .theme-switch[aria-checked="true"] .theme-switch-thumb { transform: translateX(18px); }
+
+  .easter-egg-overlay {
+    position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.6);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .easter-egg-overlay[hidden] { display: none; }
+  .easter-egg-box {
+    background: var(--panel-bg); border: 1px solid var(--border-strong); border-radius: 10px;
+    padding: 24px 32px; text-align: left; box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+  }
+  .fe-lint-box { width: 640px; max-width: 90vw; max-height: 80vh; display: flex; flex-direction: column; }
+  .fe-lint-results { overflow-y: auto; flex: 1; }
+  .fe-lint-flow { margin-bottom: 14px; }
+  .fe-lint-flow-name { font-weight: 600; margin-bottom: 4px; }
+  .fe-lint-flow-name a { color: var(--accent); text-decoration: none; }
+  .fe-lint-flow-name a:hover { text-decoration: underline; }
+  ul.fe-lint-problems { margin: 0; padding-left: 20px; font-size: 12px; color: var(--danger-text); }
+  #fe-lint-close { margin-top: 12px; }
+  .easter-egg-logo { display: block; max-width: 220px; width: 100%; margin: 0 auto 16px; }
+  .easter-egg-caption { color: var(--text); font-size: 13px; text-align: center; }
+  .easter-egg-caption:last-of-type { color: var(--text-dim); margin-bottom: 16px; }
+  #easter-egg-close {
+    display: block; margin: 8px auto 0; background: var(--collapse-btn-bg); color: var(--collapse-btn-text);
+    border: 1px solid var(--border); border-radius: 6px; font-size: 13px; padding: 6px 16px; cursor: pointer;
+  }
+
+  .tab-bar {
+    flex: none; display: flex; gap: 4px; align-items: flex-end;
+    padding: 10px 28px 0; background: var(--panel-bg); border-bottom: 1px solid var(--border);
+  }
+  /* Actual tabs: rounded top corners only (flat where they meet the
+     bar's own bottom border), sitting on a visible resting surface --
+     not fully invisible/blended into the bar until hovered -- so each
+     one reads as a distinct, clickable tab even at rest. An inactive
+     tab keeps its own bottom border (matching --border, same as the
+     bar's), so the strip under it reads continuous with the bar; only
+     the active tab (below) breaks that line, sitting 1px lower with no
+     bottom border of its own so it visually merges into the content
+     area under it -- the classic "this tab is the one attached to what
+     you're looking at" illusion. */
+  .tab-item {
+    display: flex; align-items: center; gap: 4px; border-radius: 8px 8px 0 0;
+    padding: 8px 10px 9px 14px;
+    background: var(--dnd-bg); border: 1px solid var(--border);
+    transition: background 0.12s ease, border-color 0.12s ease;
+  }
+  .tab-item:hover { background: var(--hover-bg); border-color: var(--border-strong); }
+  /* The active tab matches .app-main's own background (--bg) instead of
+     a solid accent fill, so its bottom edge visually disappears into the
+     content area below -- the classic "this tab is attached to what
+     you're looking at" illusion -- with the accent carried by its text
+     color instead. */
+  .tab-item:has(.tab-btn.active) {
+    background: var(--bg); border-color: var(--border); border-bottom-color: var(--bg);
+    margin-bottom: -1px;
+  }
+  .tab-btn {
+    background: none; border: none; border-radius: 0; color: var(--text-dim); font-size: 13px; font-weight: 600;
+    padding: 0; cursor: pointer; font-family: inherit;
+  }
+  .tab-item .tab-btn:hover:not(:disabled) { background: none; color: var(--text); filter: none; }
+  .tab-item:has(.tab-btn.active) .tab-btn { color: var(--accent); }
+  .tab-item:has(.tab-btn.active) .tab-btn:hover:not(:disabled) { color: var(--accent); }
+  .tab-help-icon { margin: 0; }
+  .tab-item:has(.tab-btn.active) .tab-help-icon {
+    background: var(--accent-bg); color: var(--accent); border-color: var(--accent);
+  }
+
+  /* min-height is a floor for the whole main area, not just the Flow
+     Editor -- on a short viewport this makes app-main taller than the
+     space left over below the header/tabs, which body (overflow-y:
+     auto, see above) then scrolls to reveal, rather than clipping it.
+     overflow-y: auto here stays for the OTHER case -- a tab whose own
+     content (a long block list, a long log) exceeds even a
+     comfortably-sized app-main -- so that scrolls internally instead of
+     growing the page further. */
+  .app-main { flex: 1; min-height: 750px; overflow-y: auto; padding: 20px 28px; display: flex; flex-direction: column; background: var(--bg); }
+  .tab-panel { display: none; flex-direction: column; flex: 1; min-height: 0; }
+  .tab-panel.active { display: flex; }
+  .tab-panel.active > .panel { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  /* --- Placeholder panels (Results, filled in a later stage) --- */
+  .placeholder-panel { color: var(--text-dimmer); font-style: italic; padding: 40px; text-align: center; }
+
+  /* --- Toolbar (Flow Editor / Queries / Verbs / Blocks top bars) -----
+     An actual icon toolbar (think Excel's Quick Access Toolbar) rather
+     than a row of plain text buttons: every action is an icon+label
+     pair with a native tooltip (title=). Every button -- not just
+     Save -- is the same style: background matches the page, purple
+     outline + text at rest, fills solid purple on hover, so the whole
+     bar reads as one consistent set instead of some actions looking
+     more "official" than others. Destructive ones (.btn-danger) are the
+     one deliberate exception, in red instead of purple. Flush strip
+     with just a bottom border, not a boxed panel -- reads as part of
+     the page rather than a separate widget sitting on top of it. */
+  .fe-top-bar {
+    display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+    padding-bottom: 14px; margin-bottom: 14px; border-bottom: 1px solid var(--border);
+  }
+  .fe-top-bar select { min-width: 220px; margin-right: 4px; }
+  .fe-top-bar button {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--bg); color: var(--accent); border: 1px solid var(--accent); font-weight: 600;
+    padding: 8px 13px; font-size: 12.5px; border-radius: 6px;
+  }
+  .fe-top-bar button:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); filter: none; }
+  .fe-top-bar button:disabled { color: var(--text-dimmer); border-color: var(--border); }
+  .fe-top-bar button:disabled .tb-icon { opacity: 0.5; }
+  .fe-top-bar button.btn-danger { color: var(--danger-text); border-color: var(--danger-text); opacity: 0.85; }
+  .fe-top-bar button.btn-danger:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger-text); border-color: var(--danger-bg); opacity: 1; }
+  .tb-icon { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .tb-icon.tb-chevron { width: 11px; height: 11px; opacity: 0.7; }
+  .fe-top-bar .tb-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: var(--border); }
+  /* Pushes everything after it (New/Save/Rename/Delete/Lint) flush right
+     against the flow picker, instead of the whole toolbar clustering on
+     the left -- matches the picker-left/actions-right layout every
+     other toolbar in this app already uses via .q-topbar's flex:1 file
+     info + flex:none actions split. */
+  .fe-top-bar-spacer { flex: 1 1 auto; }
+  .fe-top-bar > span { margin-left: auto; font-size: 12.5px; color: var(--text-dim); padding: 0 4px; }
+  .fe-meta { display: flex; gap: 12px; margin-bottom: 14px; }
+  .fe-meta input { flex: 1; }
+  .fe-meta input#fe-name { flex: 0 0 200px; }
+  .fe-meta input#fe-section { flex: 0 0 220px; }
+  .fe-used-by {
+    font-size: 12px; color: var(--text-dim); margin: -6px 0 12px; padding: 6px 10px;
+    background: var(--dnd-bg); border: 1px solid var(--border); border-radius: 6px;
+  }
+  .fe-used-by[hidden] { display: none; }
+  .fe-used-by.unused { color: var(--text-dimmer); font-style: italic; }
+  .fe-used-by a { color: var(--accent); text-decoration: none; }
+  .fe-used-by a:hover { text-decoration: underline; }
+  .fe-layout { display: flex; gap: 16px; flex: 1; min-height: 0; }
+
+  /* --- Queries tab: SQL syntax highlighting -----------------------------
+     Standard textarea-over-pre trick -- a highlighted <pre> sits behind
+     the real <textarea>, which keeps working exactly like a normal
+     textarea (typing, selection, undo, spellcheck-off, etc.) except its
+     own text is made transparent so the highlighted copy shows through.
+     The two are kept pixel-identical (font/size/line-height/padding/
+     border/white-space) so highlighted tokens land exactly under the
+     characters they represent, and scroll position is synced in JS. */
+  .q-sql-wrap { position: relative; flex: 1; min-height: 0; }
+  .q-sql-editor, .q-sql-highlight {
+    position: absolute; inset: 0; margin: 0; width: 100%; height: 100%; box-sizing: border-box;
+    padding: 12px 12px 12px 56px; border: 2px solid var(--border-strong); border-radius: 6px;
+    font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.5;
+    tab-size: 4; white-space: pre-wrap; word-wrap: break-word; overflow: auto;
+  }
+  .q-sql-editor {
+    resize: none; background: transparent; color: transparent; caret-color: var(--text); z-index: 1;
+  }
+  .q-sql-highlight {
+    background: var(--dnd-bg); color: var(--text); pointer-events: none; z-index: 0;
+  }
+  /* Line-number gutter: a third layer, same trick as the highlight
+     overlay -- an absolutely positioned box whose scrollTop is kept in
+     sync with the real textarea (see syncSqlScroll) so its numbers
+     track the visible lines. Assumes one logical line = one visual row,
+     same as every queries/*.sql file in this app actually looks (short
+     lines) -- a line long enough to wrap would drift out of sync with
+     its number, a known tradeoff rather than a bug. */
+  .q-gutter {
+    position: absolute; left: 2px; top: 2px; bottom: 2px; width: 44px; z-index: 2;
+    padding: 12px 8px 12px 0; box-sizing: border-box; overflow: hidden;
+    font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; font-size: 13px; line-height: 1.5;
+    color: var(--text-dimmer); text-align: right; background: var(--dnd-bg); border-radius: 6px 0 0 6px;
+    user-select: none; pointer-events: none;
+  }
+  .q-gutter div { white-space: pre; }
+  .sql-keyword { color: #cf6edb; font-weight: 600; }
+  .sql-type { color: #4C97FF; }
+  .sql-string { color: #40BF4A; }
+  .sql-number { color: #FF8C1A; }
+  .sql-var { color: #e0c060; }
+  .sql-placeholder { color: #ff6680; font-weight: 700; }
+  .sql-comment { color: var(--text-dimmer); font-style: italic; }
+  html[data-theme="dark"] .sql-keyword { color: #d891e8; }
+  html[data-theme="dark"] .sql-type { color: #5b9bff; }
+
+  /* --- Queries tab: sidebar + editor layout -------------------------
+     A file-browser-style sidebar (search + list, each entry showing a
+     verb badge if promoted) next to a topbar (filename/dirty state +
+     actions) over the SQL editor -- replaces the old flat dropdown.
+     No Run/Results/Params panel here: SCRAML has no query execution
+     engine to back one (see [[project-scraml-goal]]) -- this is editor
+     chrome only, adapted from a sibling project that does run queries. */
+  .q-panel { padding: 0; overflow: hidden; }
+  .q-layout { display: flex; flex: 1; min-height: 0; }
+
+  .q-sidebar {
+    width: 260px; flex: none; display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); background: var(--dnd-bg); padding: 14px;
+  }
+  .q-new-btn {
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    border-radius: 8px; font-size: 13px; padding: 10px; margin-bottom: 12px;
+  }
+  .q-search-wrap { position: relative; margin-bottom: 14px; }
+  .q-search-icon {
+    position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+    color: var(--text-dimmer); width: 13px; height: 13px; pointer-events: none;
+  }
+  .q-search-wrap input {
+    width: 100%; padding: 7px 10px 7px 28px; font-size: 12.5px;
+    background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong); border-radius: 6px;
+  }
+  .q-list-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+    color: var(--text-dimmer); margin-bottom: 6px; padding: 0 2px;
+  }
+  .q-list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .q-list-item {
+    display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; border-radius: 6px;
+    cursor: pointer; border: 1px solid transparent; background: none; width: 100%; text-align: left; font: inherit;
+  }
+  .q-list-item:hover { background: var(--hover-bg); }
+  .q-list-item.active { background: var(--accent-bg); border-color: var(--accent); }
+  .q-list-item .tb-icon { margin-top: 2px; color: var(--text-dimmer); flex: none; }
+  .q-list-item.active .tb-icon { color: var(--accent); }
+  .q-list-item-body { min-width: 0; flex: 1; }
+  .q-list-item-name {
+    font-size: 12.5px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .q-list-item.active .q-list-item-name { color: var(--accent); }
+  .q-list-item-meta { font-size: 11px; color: var(--text-dimmer); margin-top: 1px; }
+  .q-list-empty { font-size: 12.5px; color: var(--text-dimmer); font-style: italic; padding: 6px 4px; }
+  .q-verb-badge {
+    flex: none; font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    color: #2E7D6B; background: rgba(46,125,107,0.15); border-radius: 4px; padding: 2px 5px; margin-top: 1px;
+  }
+
+  .q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .q-topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+  }
+  .q-file-info { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+  .q-file-info .tb-icon { color: var(--text-dimmer); flex: none; }
+  #q-filename { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .q-dirty-badge { display: flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-dim); }
+  .q-dirty-badge[hidden] { display: none; }
+  .q-dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: #40BF4A; flex: none; }
+  .q-dirty-badge.is-dirty .q-dirty-dot { background: #FF8C1A; }
+  .q-topbar-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+  .q-topbar-actions button {
+    display: inline-flex; align-items: center; gap: 7px;
+    background: var(--bg); color: var(--accent); border: 1px solid var(--accent); font-weight: 600;
+    padding: 8px 13px; font-size: 12.5px; border-radius: 6px;
+  }
+  .q-topbar-actions button:hover:not(:disabled) { background: var(--accent); color: var(--accent-text); border-color: var(--accent); filter: none; }
+  .q-more-wrap { position: relative; }
+  .q-more-btn { padding: 8px 9px !important; }
+  /* Anchored with a caret rather than just floating below-right of the
+     "..." button -- a plain min-width menu next to a ~34px button reads
+     as a disconnected box instead of something that opened FROM it; the
+     caret (::before, a rotated square clipped to its top-left border)
+     plus a right-offset that keeps the caret over the button fixes that
+     visual link. */
+  .q-more-menu {
+    position: absolute; top: calc(100% + 10px); right: -6px; z-index: 10; min-width: 170px;
+    background: var(--panel-bg); border: 1px solid var(--border-strong); border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18); padding: 4px; display: flex; flex-direction: column; gap: 2px;
+  }
+  /* A class selector ("display: flex" above) outranks the browser's own
+     [hidden] { display: none } (a plain attribute selector) at equal
+     specificity tiers only by source order -- pin it explicitly so
+     toggling the hidden attribute in JS actually closes the menu. */
+  .q-more-menu[hidden] { display: none; }
+  .q-more-menu::before {
+    content: ''; position: absolute; top: -5px; right: 12px; width: 9px; height: 9px;
+    background: var(--panel-bg); border-left: 1px solid var(--border-strong); border-top: 1px solid var(--border-strong);
+    transform: rotate(45deg); border-radius: 2px 0 0 0;
+  }
+  .q-more-menu button {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; color: var(--text); border: none; font-weight: 500; font-size: 12.5px;
+    padding: 7px 9px; border-radius: 5px;
+  }
+  .q-more-menu button:hover { background: var(--hover-bg); filter: none; }
+  .q-more-menu button.q-more-danger { color: var(--danger-text); }
+  .q-more-menu button.q-more-danger:hover { background: var(--danger-bg); }
+  .q-more-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+
+  .q-body { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
+  .q-editor-col { flex: 1; min-height: 120px; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .q-status-bar {
+    display: flex; align-items: center; justify-content: space-between; flex: none;
+    font-size: 11.5px; color: var(--text-dimmer); padding: 0 4px;
+  }
+
+  /* --- Run split-button + connection picker -------------------------- */
+  .q-run-split { position: relative; display: flex; align-items: stretch; }
+  /* The translucent-white divider only reads correctly once this segment
+     is actually filled purple (hover) -- at rest (outline, background-
+     matching, same as every other button) it uses the normal border
+     color instead, or it'd render as a near-invisible sliver. */
+  .q-run-main { border-radius: 6px 0 0 6px !important; border-right: 1px solid var(--accent) !important; }
+  .q-run-main:hover:not(:disabled) { border-right-color: rgba(255,255,255,0.28) !important; }
+  .q-run-chevron { border-radius: 0 6px 6px 0 !important; padding: 8px 8px !important; }
+  .q-conn-menu { min-width: 220px; }
+  .q-conn-menu-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px;
+    color: var(--text-dimmer); padding: 6px 9px 4px;
+  }
+  .q-conn-item.selected { background: var(--accent-bg); color: var(--accent); font-weight: 600; }
+  .q-conn-item.selected:hover { background: var(--accent-bg); }
+  .q-conn-check { width: 13px; flex: none; color: var(--accent); }
+  .q-conn-empty { font-size: 12px; color: var(--text-dimmer); font-style: italic; padding: 6px 9px; }
+
+  /* Draggable divider between the editor and the results panel below
+     it -- a slim strip with its own hit area taller than its visible
+     grip line, so it's easy to grab without needing pixel precision.
+     The editor is the flexible side (flex: 1, above); dragging this
+     sets an explicit height directly on .q-results-panel instead (see
+     initQSplitDrag), which is the one with a concrete height to resize. */
+  .q-resize-handle {
+    flex: none; height: 12px; margin: -5px 0; display: flex; align-items: center; justify-content: center;
+    cursor: row-resize; touch-action: none; position: relative; z-index: 1;
+  }
+  .q-resize-grip {
+    width: 40px; height: 4px; border-radius: 2px; background: var(--border-strong);
+    transition: background 0.12s ease;
+  }
+  .q-resize-handle:hover .q-resize-grip, .q-resize-handle.dragging .q-resize-grip { background: var(--accent); }
+
+  /* --- Results / Params panel ----------------------------------------- */
+  .q-results-panel {
+    flex: none; height: 260px; min-height: 120px; display: flex; flex-direction: column;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--dnd-bg); overflow: hidden;
+  }
+  .q-results-tabs { display: flex; gap: 14px; padding: 8px 12px 0; border-bottom: 1px solid var(--border); flex: none; }
+  .q-results-tab {
+    background: none; border: none; color: var(--text-dim); font-weight: 600; font-size: 12.5px;
+    padding: 7px 2px; border-bottom: 2px solid transparent; border-radius: 0;
+  }
+  .q-results-tab:hover { color: var(--text); filter: none; background: none; }
+  .q-results-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .q-results-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+  .q-results-empty, .q-results-running {
+    font-size: 12.5px; color: var(--text-dimmer); font-style: italic; padding: 8px 2px;
+  }
+  .q-results-error {
+    font-size: 12.5px; color: var(--danger-text); background: var(--danger-bg);
+    border-radius: 6px; padding: 10px 12px; white-space: pre-wrap; font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace;
+  }
+  .q-results-meta { font-size: 12px; color: var(--text-dim); margin-bottom: 8px; }
+  .q-results-table-wrap { overflow: auto; border-radius: 6px; border: 1px solid var(--border); }
+  table.q-results-table { border-collapse: collapse; width: 100%; font-size: 12.5px; font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; }
+  table.q-results-table th {
+    background: var(--hover-bg); text-align: left; padding: 7px 10px; font-weight: 600; color: var(--text-dim);
+    position: sticky; top: 0; white-space: nowrap;
+  }
+  table.q-results-table td { padding: 6px 10px; border-top: 1px solid var(--border); white-space: nowrap; }
+  table.q-results-table tr:nth-child(even) td { background: rgba(127,127,127,0.05); }
+
+  .q-params-list { display: flex; flex-direction: column; gap: 8px; }
+  .q-param-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+  }
+  .q-param-row-label { flex: 0 0 170px; min-width: 0; }
+  .q-param-item-name {
+    font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; font-size: 12px; font-weight: 600;
+    color: #ff6680;
+  }
+  .q-param-item-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .q-param-row input {
+    flex: 1; padding: 6px 8px; font-size: 12px; background: var(--input-bg); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 5px;
+    font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace;
+  }
+  .q-params-empty { font-size: 12px; color: var(--text-dimmer); font-style: italic; }
+
+  /* --- Manage Connections modal --------------------------------------- */
+  .q-conn-box { width: 640px; max-width: 92vw; max-height: 85vh; display: flex; flex-direction: column; }
+  .q-conn-hint { font-size: 12px; color: var(--text-dim); margin: 0 0 14px; }
+  .q-conn-rows { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .q-conn-row {
+    display: flex; flex-direction: column; gap: 6px;
+    background: var(--dnd-bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+  }
+  .q-conn-row-top { display: flex; align-items: center; gap: 8px; }
+  .q-conn-row-top input.q-conn-name { flex: 0 0 200px; font-weight: 600; }
+  .q-conn-row-top input.q-conn-str { flex: 1; font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; font-size: 12px; }
+  .q-conn-row-actions { display: flex; gap: 6px; }
+  .q-conn-row-actions button {
+    font-size: 11.5px; padding: 6px 10px; border-radius: 5px; display: inline-flex; align-items: center; gap: 5px; font-weight: 600;
+  }
+  .q-conn-test-result { font-size: 11.5px; padding: 0 2px; }
+  .q-conn-test-result.ok { color: #2E7D6B; }
+  .q-conn-test-result.fail { color: var(--danger-text); }
+  .q-conn-add-btn {
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+    background: none; color: var(--accent); border: 1px dashed var(--accent); font-weight: 600;
+    font-size: 12.5px; padding: 7px 12px; border-radius: 6px; margin-bottom: 12px;
+  }
+  .q-conn-add-btn:hover { background: var(--accent-bg); filter: none; }
+  .q-conn-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .q-conn-footer button:not(.btn-primary) {
+    background: none; color: var(--text-dim); border: 1px solid var(--border-strong); font-weight: 600;
+  }
+  .q-conn-footer button:not(.btn-primary):hover { background: var(--hover-bg); color: var(--text); filter: none; }
+
+  /* .fe-palette-col/-search/-list: shared by the Flow Editor's palette
+     AND the Blocks tab's block-type list (see #bt-palette below) -- same
+     look for "a list of block-like things", whether they're draggable
+     canvas ingredients or editable block-type definitions. */
+  .fe-palette-col {
+    width: 320px; min-width: 240px; max-width: 600px; flex: none; display: flex; flex-direction: column;
+    gap: 8px; min-height: 0; resize: horizontal; overflow: hidden; padding-right: 4px;
+    border: 2px solid transparent; border-radius: 6px; transition: border-color 0.1s ease;
+  }
+  /* Dragging an existing canvas block over the palette previews as a
+     delete (dropping it removes the block -- see initDnd's drop
+     handler), not a reorder, so signal that with the danger color
+     instead of the normal accent drag-over highlight. */
+  .fe-palette-col.delete-target { border-color: var(--danger-text); }
+  .fe-palette-col.delete-target .fe-palette-list { background: var(--danger-bg); }
+  .fe-palette-search { flex: none; }
+  .fe-palette-list {
+    flex: 1; min-height: 0; background: var(--dnd-bg); border: 2px solid var(--border-strong); border-radius: 6px;
+    padding: 8px; overflow-y: auto;
+  }
+  .fe-palette-group { margin-top: 10px; }
+  .fe-palette-group:first-child { margin-top: 0; }
+  .fe-palette-section {
+    display: flex; align-items: center; gap: 4px; width: 100%; font-size: 11px; font-weight: 600;
+    color: var(--text-dimmer); text-transform: uppercase; margin: 0 0 4px; background: none; border: none;
+    padding: 2px 0; cursor: pointer; font-family: inherit; text-align: left;
+  }
+  .fe-palette-section::before { content: "\25be"; font-size: 9px; flex: none; }
+  .fe-palette-group.collapsed .fe-palette-section::before { content: "\25b8"; }
+  .fe-palette-group.collapsed .fe-palette-group-body { display: none; }
+  .fe-palette-group.collapsed.force-open .fe-palette-section::before { content: "\25be"; }
+  .fe-palette-group.collapsed.force-open .fe-palette-group-body { display: block; }
+  /* A subsection nested inside another group's body (currently only the
+     Base menu's per-file pills, grouped by their own section: field --
+     see buildBasePaletteTree) reads as a tree branch, not a same-level
+     sibling section. */
+  .fe-palette-group-body > .fe-palette-group {
+    margin-top: 6px; padding-left: 10px; border-left: 2px solid var(--border);
+  }
+  .fe-palette-group-body > .fe-palette-group > .fe-palette-section {
+    font-size: 10px; color: var(--text-dim);
+  }
+  .fe-chip {
+    background: #6d6d6d; border-radius: 6px; padding: 6px 8px; margin-bottom: 4px;
+    font-size: 12px; cursor: grab; font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; color: #fff; font-weight: 600;
+    border: none; box-shadow: inset 0 -2px 0 rgba(0,0,0,0.18);
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  .fe-chip.dragging { opacity: 0.4; }
+  /* Blocks tab: the chip matching whatever's currently loaded/being
+     typed gets a ring so it's obvious which list entry the form below
+     is editing; one not yet saved (its key doesn't exist in
+     btBlockTypes yet) gets a dashed outline instead of the normal solid
+     chip look, and is unclickable (see renderBtPalette) since there's
+     nothing else to load -- it already IS the current form state. */
+  .fe-chip.bt-chip { cursor: pointer; }
+  .fe-chip.bt-chip-active { box-shadow: 0 0 0 2px var(--panel-bg), 0 0 0 4px var(--accent); }
+  .fe-chip.bt-chip-unsaved { outline: 2px dashed rgba(255,255,255,0.6); outline-offset: -4px; cursor: default; }
+  .fe-chip-help {
+    background: rgba(255,255,255,0.25); color: #fff; border-color: rgba(255,255,255,0.4); cursor: pointer;
+  }
+  .fe-chip-help:hover { background: rgba(255,255,255,0.4); color: #fff; }
+  .block-header-help { background: rgba(255,255,255,0.2); color: #fff; border-color: rgba(255,255,255,0.35); }
+  .block-header-help:hover { background: rgba(255,255,255,0.35); color: #fff; }
+
+  #fe-var-list { margin-bottom: 4px; min-height: 4px; }
+  .fe-chip.fe-var-chip { background: #2E7D6B; font-style: normal; }
+  .fe-var-empty { font-size: 11px; color: var(--text-dimmer); font-style: italic; padding: 2px 2px 6px; }
+
+  /* --- Scratch-style verb group colors --- */
+  .fe-chip[data-section="Navigation / interaction"] { background: #4C97FF; }
+  .fe-chip[data-section="Reading / entering"]        { background: #40BF4A; }
+  .fe-chip[data-section="Assertions"]                { background: #FF8C1A; }
+  .fe-chip[data-section="Auditing"]                  { background: #9966FF; }
+  .fe-chip[data-section="Composition"]               { background: #FFAB19; }
+  .fe-chip[data-section="Escape hatch"]              { background: #FF6680; }
+  .fe-chip[data-section="Custom Verbs"]              { background: #2E7D6B; }
+  .fe-chip[data-section="Base"]                      { background: #8C6FE0; }
+  .fe-chip[data-type="__inject__"]                   { background: #e0c060; }
+
+  li.block[data-section="Navigation / interaction"] { --section-color: #4C97FF; }
+  li.block[data-section="Reading / entering"]        { --section-color: #40BF4A; }
+  li.block[data-section="Assertions"]                { --section-color: #FF8C1A; }
+  li.block[data-section="Auditing"]                  { --section-color: #9966FF; }
+  li.block[data-section="Composition"]               { --section-color: #FFAB19; }
+  li.block[data-section="Escape hatch"]              { --section-color: #FF6680; }
+  li.block[data-section="Custom Verbs"]              { --section-color: #2E7D6B; }
+  li.block[data-section="Base"]                      { --section-color: #8C6FE0; }
+  li.block[data-type="__inject__"]                   { --section-color: #e0c060; }
+
+  /* Border matches the header color so a block stands out clearly
+     against the canvas and its neighbors, not just at the top edge. */
+  li.block[data-section], li.block[data-type="__inject__"] { border: 2px solid var(--section-color); padding: 0; overflow: hidden; }
+  li.block[data-section] .block-header,
+  li.block[data-type="__inject__"] .block-header { margin: 0; padding: 8px; border-radius: 4px 4px 0 0; color: #fff; background: var(--section-color); }
+  li.block[data-section] .block-fields,
+  li.block[data-section] .block-modifiers,
+  li.block[data-section] .block-children-wrap { padding: 0 8px; }
+  li.block[data-section] .block-fields { padding-top: 8px; }
+  li.block[data-section] .block-children-wrap,
+  li.block[data-section] .block-modifiers:last-child { padding-bottom: 8px; }
+  li.block[data-section] .block-type-label { color: #fff; }
+  li.block[data-section] .block-collapse,
+  li.block[data-section] .block-duplicate,
+  li.block[data-section] .block-delete { background: rgba(255,255,255,0.28); color: #fff; }
+
+  /* --- Blocks tab: full field editor for any STEP_TYPES entry -------- */
+  /* Matches .fe-palette-col's own 2px transparent border (its drag-over
+     highlight ring) so both columns share the same box model -- without
+     it, the palette's border pushes its content down 2px relative to
+     this column's, throwing off the Search/Block Key label+input row
+     alignment right next to it. */
+  .bt-editor-col { flex: 1; min-height: 0; display: flex; flex-direction: column; border: 2px solid transparent; }
+  .bt-meta { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
+  /* Each field's purpose is only obvious from its placeholder text --
+     which disappears the moment it's filled in (e.g. a loaded block
+     shows "action" / "Escape hatch" / "Runs a custom..." with nothing
+     to tell you which is the key vs. the section vs. the description).
+     A small persistent label above each input fixes that. */
+  .bt-field-group { display: flex; flex-direction: column; gap: 4px; }
+  .bt-field-group-label {
+    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
+    color: var(--text-dimmer);
+  }
+  .bt-field-group:has(#bt-key) { flex: 0 0 220px; }
+  .bt-field-group:has(#bt-section) { flex: 0 0 200px; }
+  .bt-field-group:has(#bt-description) { flex: 1; }
+  .bt-container-label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); white-space: nowrap; padding-bottom: 9px; }
+  .bt-fields-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .bt-fields-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .bt-fields-header span { font-size: 13px; font-weight: 600; color: var(--text-dim); }
+  .bt-fields-cols {
+    display: grid; grid-template-columns: 1fr 130px 1fr 1fr 1.4fr 40px 60px; gap: 6px;
+    font-size: 11px; color: var(--text-dimmer); text-transform: uppercase; padding: 0 2px 4px;
+  }
+  #bt-fields {
+    flex: 1; min-height: 0; overflow-y: auto; background: var(--dnd-bg); border: 2px solid var(--border-strong);
+    border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  }
+  .bt-field-row {
+    display: grid; grid-template-columns: 1fr 130px 1fr 1fr 1.4fr 40px 60px; gap: 6px; align-items: center;
+  }
+  .bt-field-row input[type="text"], .bt-field-row select {
+    width: 100%; padding: 5px 6px; font-size: 12px; background: var(--input-bg); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 4px;
+  }
+  .bt-field-row input[type="checkbox"] { justify-self: center; }
+  .bt-field-row-btns { display: flex; gap: 2px; }
+  .bt-field-row-btns button {
+    background: var(--collapse-btn-bg); color: var(--collapse-btn-text); border: none; border-radius: 4px;
+    width: 20px; height: 20px; padding: 0; font-size: 11px; cursor: pointer;
+  }
+  .bt-field-row-btns button.bt-field-remove { background: var(--danger-bg); color: var(--danger-text); }
+  .bt-fields-empty { color: var(--text-dimmer); font-style: italic; font-size: 12px; padding: 4px 2px; }
+
+  #fe-canvas-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  ul.canvas {
+    list-style: none; margin: 0; padding: 8px; flex: 1; min-height: 0; overflow-y: auto;
+    background: var(--dnd-bg); border: 2px solid var(--border-strong); border-radius: 6px;
+  }
+  ul.canvas.drag-over { background: var(--accent-bg); border-color: var(--accent); }
+  ul.block-children { flex: none; min-height: 40px; max-height: none; margin-top: 4px; }
+  /* A decent-sized empty strip above the first block and below the last
+     one -- always a visible, easy-to-hit target to drop something at
+     the very start/end of the flow, not just a 1px gap between blocks. */
+  #fe-canvas { padding-top: 28px; padding-bottom: 28px; }
+
+  li.block {
+    background: var(--panel-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 13px;
+  }
+  li.block.dragging { opacity: 0.4; }
+  li.block.collapsed .block-fields,
+  li.block.collapsed .block-modifiers,
+  li.block.collapsed .block-children-wrap { display: none; }
+  .block-header { display: flex; align-items: center; gap: 8px; cursor: grab; }
+  .block-collapse, .block-duplicate, .block-delete {
+    background: var(--collapse-btn-bg); color: var(--collapse-btn-text); border: none; border-radius: 4px; width: 22px; height: 22px; padding: 0;
+    font-size: 14px; line-height: 1; cursor: pointer;
+  }
+  .block-duplicate { font-size: 12px; }
+  .block-delete { background: var(--danger-bg); color: var(--danger-text); }
+  .block-type-label { font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace; font-weight: 600; font-size: 13px; color: var(--text); }
+
+  .block-fields { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .field-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .field-row > .field-label-wrap {
+    /* Fixed (not min-) width so every row's checkbox/combo/input starts
+       at the same x position within a block, regardless of that row's
+       own label length -- sized to fit the longest label in the app
+       ("If Visible Timeout") without truncating. */
+    width: 160px; flex: none; display: flex; align-items: center; gap: 4px;
+    color: var(--text-dim); font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace;
+  }
+  .field-row > .field-label-wrap > label { white-space: nowrap; }
+
+  .help-icon {
+    flex: none; width: 15px; height: 15px; border-radius: 50%; padding: 0; line-height: 1;
+    background: var(--collapse-btn-bg); color: var(--text-dimmer); border: 1px solid var(--border-strong);
+    font-size: 10px; font-family: Georgia, serif; font-style: italic; cursor: pointer;
+  }
+  .help-icon:hover { color: var(--text); border-color: var(--accent); }
+  .help-tooltip {
+    position: fixed; z-index: 50; max-width: 280px; background: var(--panel-bg); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: 6px; padding: 8px 10px; font-size: 12px;
+    line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.25); font-family: "Segoe UI", Arial, sans-serif;
+  }
+  .field-input { flex: 1; display: flex; align-items: center; gap: 6px; }
+  /* Scoped to .field-row (not just .field-input) so this also themes
+     modifier rows (if_visible/comment) -- their inputs/selects are
+     appended straight onto .field-row, without a .field-input wrapper. */
+  .field-row input[type="text"], .field-row input[type="number"], .field-row select {
+    flex: 1; padding: 4px 6px; font-size: 12px; background: var(--input-bg); color: var(--text); border: 1px solid var(--border-strong);
+    border-radius: 4px;
+  }
+
+  .resolvable-box, .criteria-box, .tap-if-closed-box, .comment-box { display: flex; align-items: center; gap: 4px; flex: 1; }
+  .resolvable-box select, .criteria-box select { flex: none; width: 128px; }
+  .resolvable-box input, .criteria-box input { flex: 1; }
+  .resolvable-value-slot { flex: 1; display: flex; align-items: center; }
+
+  .resolvable-var-card {
+    display: inline-flex; align-items: center; gap: 6px; cursor: grab; margin-bottom: 0;
+  }
+  .resolvable-var-card.dragging { opacity: 0.4; }
+  .resolvable-var-empty {
+    flex: 1; border: 1px dashed var(--border-strong); border-radius: 12px; padding: 4px 10px;
+    font-size: 12px; color: var(--text-dimmer); font-style: italic; text-align: center;
+  }
+
+  .store-as-tags {
+    flex: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+    background: var(--input-bg); border: 1px solid var(--border-strong); border-radius: 4px; padding: 3px 6px;
+  }
+  .store-as-pills { display: contents; }
+  .store-as-pill {
+    background: #2E7D6B; color: #fff; border-radius: 10px; padding: 2px 8px; font-size: 12px; font-weight: 600;
+    white-space: nowrap;
+  }
+  .store-as-input {
+    flex: 1; min-width: 80px; border: none !important; background: transparent !important; padding: 2px 0 !important;
+  }
+
+  .list-resolvable-box { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .list-resolvable-rows { display: flex; flex-direction: column; gap: 4px; }
+  .list-resolvable-row { display: flex; align-items: center; gap: 4px; }
+  .list-resolvable-label {
+    flex: none; width: 100px; font-size: 11px; color: var(--text-dim); font-family: "Cascadia Mono", "Fira Code", Consolas, "Courier New", monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .list-resolvable-row button, .comment-part-row button { background: var(--danger-bg); color: var(--danger-text); border: none; border-radius: 4px; width: 20px; cursor: pointer; }
+
+  .block-modifiers { margin-top: 6px; font-size: 11px; }
+  .block-modifiers summary { cursor: pointer; color: var(--text-dim); }
+  .modifiers-grid { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+  .comment-row { margin-top: 4px; }
+  .comment-parts { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+  .comment-part-row { display: flex; gap: 4px; }
+
+  .block-children-wrap { margin-top: 8px; padding-left: 14px; border-left: 3px solid var(--border); }
+  .block-children-label { font-size: 11px; color: var(--text-dimmer); margin-bottom: 4px; }
+
+  /* One of these per inject point a base file declares -- see
+     buildInjectSlotsWrap. Styled distinctly from a plain nested Steps:
+     canvas (amber accent, matching the __inject__ chip's own color)
+     since a slot's identity/order comes from the base file itself, not
+     from anything draggable/deletable here. */
+  .inject-slot { margin-top: 8px; padding-left: 14px; border-left: 3px solid var(--inject-border); }
+  .inject-slot + .inject-slot { margin-top: 10px; }
+  .inject-slot-label {
+    font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
+    color: var(--inject-border); margin-bottom: 4px;
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="app-header-titles">
+    <h1>SCRAML</h1>
+    <span class="app-version">Visual YAML editor</span>
+  </div>
+  <div class="q-more-wrap">
+    <button type="button" id="header-menu-btn" title="Menu" aria-haspopup="true" aria-expanded="false">
+      <svg class="tb-icon" viewBox="0 0 20 20"><path d="M3 5.5h14M3 10h14M3 14.5h14"/></svg>
+    </button>
+    <div class="q-more-menu header-menu" id="header-menu" hidden>
+      <div class="header-menu-row">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 3v2M10 15v2M4.2 4.2l1.4 1.4M14.4 14.4l1.4 1.4M3 10h2M15 10h2M4.2 15.8l1.4-1.4M14.4 5.6l1.4-1.4"/><circle cx="10" cy="10" r="3.2"/></svg>
+        <span>Light</span>
+        <button type="button" id="theme-toggle-btn" class="theme-switch" role="switch" aria-checked="false" aria-label="Toggle dark mode">
+          <span class="theme-switch-thumb"></span>
+        </button>
+        <span>Dark</span>
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M16.5 11.8A6.8 6.8 0 018.2 3.5a6.8 6.8 0 108.3 8.3z"/></svg>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Theme toggle click-counter easter egg -- see checkEasterEgg() below. -->
+<div id="easter-egg-overlay" class="easter-egg-overlay" hidden>
+  <div class="easter-egg-box">
+    <img class="easter-egg-logo" src="{{ url_for('static', filename='js/logo.png') }}" alt="SCRAML logo">
+    <div class="easter-egg-caption">Author - Aaron Rockwell 2026</div>
+    <button type="button" id="easter-egg-close">Close</button>
+  </div>
+</div>
+
+<div class="tab-bar">
+  <span class="tab-item">
+    <button class="tab-btn active" data-tab="flow-editor">Flow Editor</button>
+    <button type="button" class="help-icon tab-help-icon" data-help="Build or edit a flow visually. Drag blocks from the palette into the canvas; drag existing blocks to reorder or move them into a container (group/loop/base).">i</button>
+  </span>
+  <span class="tab-item">
+    <button class="tab-btn" data-tab="queries">Queries</button>
+    <button type="button" class="help-icon tab-help-icon" data-help="Create, edit, or delete the named SQL queries under queries/*.sql -- referenced by a query step's Action field and reusable across every flow. A &quot;DECLARE @Name TYPE = ?&quot; line for each positional parameter, in call order, is what the Flow Editor reads back as that query's param labels.">i</button>
+  </span>
+  <span class="tab-item">
+    <button class="tab-btn" data-tab="verbs">Verbs</button>
+    <button type="button" class="help-icon tab-help-icon" data-help="Edit a promoted verb -- its SQL, and the display label/palette section its Flow Editor pill uses. Promote a query to a verb from the Queries tab first (Save as Verb); it then shows up here.">i</button>
+  </span>
+  <span class="tab-item">
+    <button class="tab-btn" data-tab="blocks">Blocks</button>
+    <button type="button" class="help-icon tab-help-icon" data-help="Every block in the Flow Editor's palette -- tap, wait, group, assert_sql, all of them -- is just a YAML shape, not something special. Edit any block's fields here, or add a brand new one; nothing is off-limits.">i</button>
+  </span>
+</div>
+
+<main class="app-main">
+
+<div id="tab-flow-editor" class="tab-panel active">
+
+  <div class="panel">
+    <div class="fe-top-bar">
+      <select id="fe-flow-select" title="Loads automatically when you pick a flow or base file"></select>
+      <span class="fe-top-bar-spacer"></span>
+      <div class="q-more-wrap">
+        <button type="button" id="fe-new-btn" title="Create a new flow or base file">
+          <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+          <span>New</span>
+          <svg class="tb-icon tb-chevron" viewBox="0 0 20 20"><path d="M5 8l5 5 5-5"/></svg>
+        </button>
+        <div class="q-more-menu" id="fe-new-menu" hidden>
+          <button type="button" id="fe-new-flow-btn" title="Create a new, empty flow">
+            <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 2.5h5.5L15 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M11.5 2.5V6H15"/><path d="M8 12h4M10 10v4"/></svg>
+            <span>New Flow</span>
+          </button>
+          <button type="button" id="fe-new-base-btn" title="Create a new, empty base file (a shared step sequence other flows can include)">
+            <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 2.5l7 4-7 4-7-4 7-4z"/><path d="M3 10.5l7 4 7-4"/><path d="M3 14.5l7 4 7-4"/></svg>
+            <span>New Base File</span>
+          </button>
+        </div>
+      </div>
+      <button id="fe-save-btn" class="btn-primary" title="Save the current flow to disk">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 3h10l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M6.5 3v5h7V3"/><path d="M6.5 13.5h7"/></svg>
+        <span>Save</span>
+      </button>
+      <button id="fe-rename-btn" title="Rename this flow's file">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 16l.8-3.6L13.6 3.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L7.6 15.2 4 16z"/><path d="M12.3 5.3l2.4 2.4"/></svg>
+        <span>Rename</span>
+      </button>
+      <button id="fe-delete-btn" class="btn-danger" title="Delete this flow's file -- cannot be undone">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 6h12"/><path d="M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6"/><path d="M6.2 6l.8 10.2a1 1 0 0 0 1 .8h4a1 1 0 0 0 1-.8L13.8 6"/><path d="M8.5 9v5M11.5 9v5"/></svg>
+        <span>Delete</span>
+      </button>
+      <button id="fe-lint-btn" title="Statically checks every flow/base file's own base/query/action references -- no device/Appium involved">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M7.5 3h5a1 1 0 0 1 1 1v.5h-7V4a1 1 0 0 1 1-1z"/><path d="M6.5 4.5h7v11.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4.5z"/><path d="M8.3 10l1.4 1.4 2.6-3"/></svg>
+        <span>Lint All Flows</span>
+      </button>
+      <span id="fe-status"></span>
+    </div>
+
+    <div id="fe-lint-overlay" class="easter-egg-overlay" hidden>
+      <div class="easter-egg-box fe-lint-box">
+        <h3 style="margin-top:0;">Flow Lint Results</h3>
+        <div id="fe-lint-summary" class="fe-used-by" style="margin:0 0 12px;"></div>
+        <div id="fe-lint-results" class="fe-lint-results"></div>
+        <button type="button" id="fe-lint-close">Close</button>
+      </div>
+    </div>
+
+    <div class="fe-meta">
+      <input type="text" id="fe-name" placeholder="Flow name">
+      <input type="text" id="fe-description" placeholder="Description">
+      <input type="text" id="fe-section" placeholder="Section (e.g. Inventory\PalletBuild)">
+    </div>
+
+    <div id="fe-used-by" class="fe-used-by" hidden></div>
+
+    <div class="fe-layout">
+      <div id="fe-palette-col" class="fe-palette-col">
+        <input type="search" id="fe-palette-search" class="fe-palette-search" placeholder="Search blocks...">
+        <div id="fe-palette" class="fe-palette-list"></div>
+      </div>
+      <div id="fe-canvas-wrap">
+        <ul id="fe-canvas" class="canvas"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="tab-queries" class="tab-panel">
+  <div class="panel q-panel">
+    <div class="q-layout">
+      <div class="q-sidebar">
+        <button type="button" class="q-new-btn" id="q-new-btn" title="Create a new, empty SQL query">
+          <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+          <span>New Query</span>
+        </button>
+        <div class="q-search-wrap">
+          <svg class="q-search-icon" viewBox="0 0 20 20"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M16 16l-3.5-3.5"/></svg>
+          <input type="search" id="q-search" placeholder="Search queries...">
+        </div>
+        <div class="q-list-label">Queries</div>
+        <div class="q-list" id="q-list"></div>
+      </div>
+      <div class="q-main">
+        <div class="q-topbar">
+          <div class="q-file-info">
+            <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 2.5h5.5L15 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M11.5 2.5V6H15"/></svg>
+            <span id="q-filename">No query selected</span>
+            <span class="q-dirty-badge" id="q-dirty-badge" hidden>
+              <span class="q-dirty-dot"></span>
+              <span id="q-dirty-text">Saved</span>
+            </span>
+          </div>
+          <div class="q-topbar-actions">
+            <div class="q-run-split">
+              <button id="q-run-btn" class="btn-primary q-run-main" title="Run this SQL (exactly what's in the editor, saved or not) against the selected connection">
+                <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 4l10 6-10 6V4z"/></svg>
+                <span>Run</span>
+              </button>
+              <button type="button" id="q-conn-chevron-btn" class="btn-primary q-run-chevron" title="Choose which DB connection to run against">
+                <svg class="tb-icon tb-chevron" viewBox="0 0 20 20"><path d="M5 8l5 5 5-5"/></svg>
+              </button>
+              <div class="q-more-menu q-conn-menu" id="q-conn-menu" hidden>
+                <div class="q-conn-menu-label">Run against</div>
+                <div id="q-conn-list"></div>
+                <div class="q-more-sep"></div>
+                <button type="button" id="q-manage-conn-btn">
+                  <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 6.5a3.5 3.5 0 100 7 3.5 3.5 0 000-7z"/><path d="M10 2.5v2M10 15.5v2M4.4 5.6l1.4 1.4M14.2 13l1.4 1.4M2.5 10h2M15.5 10h2M4.4 14.4l1.4-1.4M14.2 7l1.4-1.4"/></svg>
+                  <span>Manage Connections...</span>
+                </button>
+              </div>
+            </div>
+            <button id="q-save-btn" class="btn-primary" title="Save this query to disk">
+              <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 3h10l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M6.5 3v5h7V3"/><path d="M6.5 13.5h7"/></svg>
+              <span>Save</span>
+            </button>
+            <div class="q-more-wrap">
+              <button type="button" id="q-more-btn" class="q-more-btn" title="More actions">
+                <svg class="tb-icon" viewBox="0 0 20 20"><circle cx="4" cy="10" r="1.3"/><circle cx="10" cy="10" r="1.3"/><circle cx="16" cy="10" r="1.3"/></svg>
+              </button>
+              <div class="q-more-menu" id="q-more-menu" hidden>
+                <button type="button" id="q-rename-btn">
+                  <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 16l.8-3.6L13.6 3.6a1.5 1.5 0 0 1 2.1 0l.7.7a1.5 1.5 0 0 1 0 2.1L7.6 15.2 4 16z"/><path d="M12.3 5.3l2.4 2.4"/></svg>
+                  <span>Rename</span>
+                </button>
+                <button type="button" id="q-verb-btn" title="Promote this query to its own labeled palette pill in the Flow Editor">
+                  <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 3h8a1 1 0 0 1 1 1v13l-5-3.2L5 17V4a1 1 0 0 1 1-1z"/></svg>
+                  <span>Save as Verb</span>
+                </button>
+                <button type="button" id="q-unverb-btn" style="display:none;" title="Remove this query's promoted verb pill -- the query itself is unaffected">
+                  <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 3h8a1 1 0 0 1 1 1v13l-5-3.2L5 17V4a1 1 0 0 1 1-1z"/><path d="M8.2 7.2l3.6 3.6M11.8 7.2l-3.6 3.6"/></svg>
+                  <span>Remove Verb</span>
+                </button>
+                <div class="q-more-sep"></div>
+                <button type="button" id="q-delete-btn" class="q-more-danger" title="Delete this query's file -- cannot be undone">
+                  <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 6h12"/><path d="M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6"/><path d="M6.2 6l.8 10.2a1 1 0 0 0 1 .8h4a1 1 0 0 0 1-.8L13.8 6"/><path d="M8.5 9v5M11.5 9v5"/></svg>
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="q-body">
+          <div class="q-editor-col">
+            <div class="q-sql-wrap">
+              <div class="q-gutter" id="q-gutter" aria-hidden="true"></div>
+              <pre class="q-sql-highlight" id="q-sql-highlight" aria-hidden="true"><code id="q-sql-highlight-code"></code></pre>
+              <textarea id="q-sql" class="q-sql-editor" placeholder="-- SQL text&#10;-- DECLARE @Barcode VARCHAR(50) = ?" spellcheck="false"></textarea>
+            </div>
+            <div class="q-status-bar">
+              <span id="q-cursor-pos">Ln 1, Col 1</span>
+              <span id="q-status"></span>
+            </div>
+          </div>
+          <div class="q-resize-handle" id="q-resize-handle" title="Drag to resize"><div class="q-resize-grip"></div></div>
+          <div class="q-results-panel">
+            <div class="q-results-tabs">
+              <button type="button" class="q-results-tab active" data-rtab="results">Results</button>
+              <button type="button" class="q-results-tab" data-rtab="params">Params</button>
+            </div>
+            <div class="q-results-body">
+              <div id="q-results-view">
+                <div class="q-results-empty">Run a query to see results here.</div>
+              </div>
+              <div id="q-params-view" hidden>
+                <div class="q-params-list" id="q-params-list">
+                  <div class="q-params-empty">This query has no '?' placeholders.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="q-conn-overlay" class="easter-egg-overlay" hidden>
+  <div class="easter-egg-box q-conn-box">
+    <h3 style="margin-top:0;">Manage Connections</h3>
+    <p class="q-conn-hint">Named ODBC connections the Run button can target -- stored in plaintext in config/connections.json (gitignored). A connection string is whatever your ODBC driver expects, e.g. <code>DRIVER={ODBC Driver 17 for SQL Server};SERVER=host;DATABASE=db;UID=user;PWD=pass;</code></p>
+    <div class="q-conn-rows" id="q-conn-rows"></div>
+    <button type="button" class="q-conn-add-btn" id="q-conn-add-btn">
+      <svg class="tb-icon" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></svg>
+      <span>Add Connection</span>
+    </button>
+    <div class="q-conn-footer">
+      <button type="button" id="q-conn-close-btn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="tab-verbs" class="tab-panel">
+  <div class="panel">
+    <div class="fe-top-bar">
+      <select id="v-select"></select>
+      <span class="fe-top-bar-spacer"></span>
+      <button id="v-save-btn" class="btn-primary" title="Save this verb's SQL and its display label/section">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 3h10l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M6.5 3v5h7V3"/><path d="M6.5 13.5h7"/></svg>
+        <span>Save</span>
+      </button>
+      <button id="v-unverb-btn" class="btn-danger" title="Remove this verb's palette pill -- the underlying query is unaffected">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 3h8a1 1 0 0 1 1 1v13l-5-3.2L5 17V4a1 1 0 0 1 1-1z"/><path d="M8.2 7.2l3.6 3.6M11.8 7.2l-3.6 3.6"/></svg>
+        <span>Remove Verb</span>
+      </button>
+      <span id="v-status"></span>
+    </div>
+    <div class="fe-meta">
+      <input type="text" id="v-label" placeholder="Display label (blank = auto from name)">
+      <input type="text" id="v-section" placeholder="Palette section (blank = Custom Verbs)">
+    </div>
+    <div class="q-sql-wrap">
+      <div class="q-gutter" id="v-gutter" aria-hidden="true"></div>
+      <pre class="q-sql-highlight" id="v-sql-highlight" aria-hidden="true"><code id="v-sql-highlight-code"></code></pre>
+      <textarea id="v-sql" class="q-sql-editor" placeholder="-- SQL text&#10;-- DECLARE @Barcode VARCHAR(50) = ?" spellcheck="false"></textarea>
+    </div>
+  </div>
+</div>
+
+<div id="tab-blocks" class="tab-panel">
+  <div class="panel">
+    <div class="fe-top-bar">
+      <span id="bt-status"></span>
+      <span class="fe-top-bar-spacer"></span>
+      <button id="bt-new-btn" title="Start defining a brand new block type">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M7 3.5h3v1.7a1.3 1.3 0 0 0 2.6 0V3.5h3a1 1 0 0 1 1 1v3h-1.7a1.3 1.3 0 0 0 0 2.6h1.7v3a1 1 0 0 1-1 1h-3v-1.7a1.3 1.3 0 0 0-2.6 0v1.7H7a1 1 0 0 1-1-1v-3h1.7a1.3 1.3 0 0 0 0-2.6H6v-3a1 1 0 0 1 1-1z"/></svg>
+        <span>New Block</span>
+      </button>
+      <button id="bt-save-btn" class="btn-primary" title="Save this block type's fields and metadata">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 3h10l3 3v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M6.5 3v5h7V3"/><path d="M6.5 13.5h7"/></svg>
+        <span>Save</span>
+      </button>
+      <button id="bt-delete-btn" class="btn-danger" title="Delete this block type -- any flow already using it will show as an unrecognized block">
+        <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 6h12"/><path d="M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6"/><path d="M6.2 6l.8 10.2a1 1 0 0 0 1 .8h4a1 1 0 0 0 1-.8L13.8 6"/><path d="M8.5 9v5M11.5 9v5"/></svg>
+        <span>Delete</span>
+      </button>
+    </div>
+    <div class="fe-layout">
+      <div id="bt-palette-col" class="fe-palette-col">
+        <div class="bt-field-group">
+          <label class="bt-field-group-label" for="bt-palette-search">Search</label>
+          <input type="search" id="bt-palette-search" class="fe-palette-search">
+        </div>
+        <div id="bt-palette" class="fe-palette-list"></div>
+      </div>
+      <div class="bt-editor-col">
+        <div class="bt-meta">
+          <div class="bt-field-group">
+            <label class="bt-field-group-label" for="bt-key">Block Key</label>
+            <input type="text" id="bt-key" placeholder="lowercase, e.g. log_message">
+          </div>
+          <div class="bt-field-group">
+            <label class="bt-field-group-label" for="bt-section">Palette Section</label>
+            <input type="text" id="bt-section" placeholder="e.g. Custom Blocks">
+          </div>
+          <div class="bt-field-group">
+            <label class="bt-field-group-label" for="bt-description">Description</label>
+            <input type="text" id="bt-description" placeholder="Shown as this block's help text">
+          </div>
+          <label class="bt-container-label"><input type="checkbox" id="bt-container"> Container (holds nested steps)</label>
+        </div>
+        <div class="bt-fields-wrap">
+          <div class="bt-fields-header">
+            <span>Fields</span>
+            <button type="button" id="bt-add-field-btn">+ Add Field</button>
+          </div>
+          <div class="bt-fields-cols">
+            <span>Name</span><span>Kind</span><span>Default</span><span>Choices (kind: select/combo)</span><span>Help</span><span>Opt.</span><span></span>
+          </div>
+          <div id="bt-fields"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+
+<script>
+window.STEP_TYPES = {{ step_types | tojson }};
+
+// Small shared helper so a page reload (or a copy/pasted link) can put
+// the user back roughly where they left off -- current tab, which flow
+// is loaded, which palette sections are expanded, etc. Both this file's
+// inline script and flow_editor.js read/write through here rather than
+// touching location.search directly, so it stays one consistent
+// history entry instead of each writer clobbering the others' params.
+window.FE_URL_STATE = {
+  get(key) {
+    return new URLSearchParams(location.search).get(key);
+  },
+  set(key, value) {
+    const params = new URLSearchParams(location.search);
+    if (value === null || value === undefined || value === "") params.delete(key);
+    else params.set(key, value);
+    const qs = params.toString();
+    history.replaceState(null, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+  },
+};
+</script>
+<script src="{{ url_for('static', filename='js/flow_editor.js') }}"></script>
+
+<script>
+// --- Header menu (hamburger) -- currently just the theme switch ---
+const headerMenuBtn = document.getElementById('header-menu-btn');
+const headerMenu = document.getElementById('header-menu');
+headerMenuBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  const opening = headerMenu.hidden;
+  headerMenu.hidden = !opening;
+  headerMenuBtn.setAttribute('aria-expanded', String(opening));
+});
+document.addEventListener('click', (e) => {
+  if (!headerMenu.hidden && !e.target.closest('#header-menu-btn') && !e.target.closest('#header-menu')) {
+    headerMenu.hidden = true;
+    headerMenuBtn.setAttribute('aria-expanded', 'false');
+  }
+});
+
+// --- Theme toggle (persisted server-side to config/ui_prefs.json) ---
+const themeToggleBtn = document.getElementById('theme-toggle-btn');
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  themeToggleBtn.setAttribute('aria-checked', String(theme === 'dark'));
+}
+
+applyTheme(document.documentElement.dataset.theme || 'light');
+
+themeToggleBtn.addEventListener('click', async () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  applyTheme(next);
+  await fetch('/api/ui-prefs', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({theme: next})
+  });
+  checkEasterEgg();
+});
+
+// --- Easter egg: expand Assertions + Reading / entering in the Flow
+// Editor palette, then click the theme toggle 5 times in a row. The
+// streak resets if either section gets collapsed again in between.
+
+let themeToggleStreak = 0;
+function checkEasterEgg() {
+  const palette = window.FE_PALETTE_STATE;
+  const bothOpen = palette && palette.isExpanded('Assertions') && palette.isExpanded('Reading / entering');
+  themeToggleStreak = bothOpen ? themeToggleStreak + 1 : 0;
+  if (themeToggleStreak >= 5) {
+    themeToggleStreak = 0;
+    document.getElementById('easter-egg-overlay').hidden = false;
+  }
+}
+document.getElementById('easter-egg-close').addEventListener('click', () => {
+  document.getElementById('easter-egg-overlay').hidden = true;
+});
+document.getElementById('easter-egg-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'easter-egg-overlay') e.currentTarget.hidden = true;
+});
+
+// --- Tabs ---
+function activateTab(tabKey, opts) {
+  const btn = document.querySelector(`.tab-btn[data-tab="${tabKey}"]`);
+  const panel = document.getElementById('tab-' + tabKey);
+  if (!btn || !panel) return;
+  for (const b of document.querySelectorAll('.tab-btn')) b.classList.remove('active');
+  for (const p of document.querySelectorAll('.tab-panel')) p.classList.remove('active');
+  btn.classList.add('active');
+  panel.classList.add('active');
+  if (!(opts && opts.skipUrl)) window.FE_URL_STATE.set('tab', tabKey);
+  if (tabKey === 'queries' && !qListLoaded) refreshQueryList();
+  if (tabKey === 'verbs') refreshVerbList();
+  if (tabKey === 'blocks') refreshBlockTypeList();
+}
+
+for (const btn of document.querySelectorAll('.tab-btn')) {
+  btn.addEventListener('click', () => activateTab(btn.dataset.tab));
+}
+
+// --- Tab help icons (replaces the old always-visible ".sub" paragraphs
+// that used to sit under every tab -- same text, now tucked behind an
+// (i) so the page itself starts clean). Reuses the .help-icon/
+// .help-tooltip look flow_editor.js's own field-help icons use, but
+// implemented separately since that file is a self-contained IIFE that
+// doesn't expose its tooltip helpers globally.
+document.querySelectorAll('.tab-help-icon').forEach((el, i) => {
+  el.dataset.tooltipId = 'tabhelp' + i;
+});
+let activeTabTooltip = null;
+function closeTabTooltip() {
+  if (activeTabTooltip) {
+    activeTabTooltip.remove();
+    activeTabTooltip = null;
+  }
+}
+document.addEventListener('click', (e) => {
+  const icon = e.target.closest('.tab-help-icon');
+  if (!icon) {
+    closeTabTooltip();
+    return;
+  }
+  e.stopPropagation();
+  const reopening = activeTabTooltip && activeTabTooltip.dataset.owner === icon.dataset.tooltipId;
+  closeTabTooltip();
+  if (reopening) return;
+
+  const tip = document.createElement('div');
+  tip.className = 'help-tooltip';
+  tip.textContent = icon.dataset.help;
+  tip.dataset.owner = icon.dataset.tooltipId;
+  document.body.appendChild(tip);
+
+  const rect = icon.getBoundingClientRect();
+  const tipRect = tip.getBoundingClientRect();
+  let left = rect.left;
+  if (left + tipRect.width > window.innerWidth - 12) left = window.innerWidth - tipRect.width - 12;
+  tip.style.left = Math.max(8, left) + 'px';
+  tip.style.top = rect.bottom + 6 + 'px';
+  activeTabTooltip = tip;
+});
+document.addEventListener('scroll', closeTabTooltip, true);
+
+// --- Queries tab: lightweight SQL syntax highlighting -------------------
+// Single-pass regex tokenizer -- not a real SQL parser, just enough to
+// color the handful of things that make a query readable at a glance
+// (keywords, types, strings, comments, @vars, ? placeholders, numbers).
+// Good enough for the short parameterized queries this app actually
+// stores; not trying to handle every T-SQL edge case.
+const SQL_KEYWORDS = new Set([
+  'SELECT','FROM','WHERE','AND','OR','NOT','NULL','IS','AS','ON','IN','EXISTS','BEGIN','END',
+  'IF','ELSE','CASE','WHEN','THEN','TOP','ORDER','BY','GROUP','HAVING','SET','VALUES','INTO',
+  'INSERT','UPDATE','DELETE','JOIN','INNER','LEFT','RIGHT','OUTER','FULL','CROSS','WITH',
+  'DEFAULT','PRIMARY','KEY','FOREIGN','REFERENCES','TABLE','CREATE','ALTER','DROP','DISTINCT',
+  'COUNT','SUM','MAX','MIN','AVG','CAST','CONVERT','DECLARE','UNION','ALL','ASC','DESC',
+  'READUNCOMMITTED','NOLOCK','NOCOUNT','ROWCOUNT','TRUNCATE','MERGE','USING','OVER','PARTITION',
+]);
+const SQL_TYPES = new Set([
+  'VARCHAR','NVARCHAR','CHAR','NCHAR','INT','BIGINT','SMALLINT','TINYINT','BIT','FLOAT','REAL',
+  'DECIMAL','NUMERIC','DATE','DATETIME','DATETIME2','TIME','TEXT','NTEXT','MONEY','UNIQUEIDENTIFIER',
+]);
+const SQL_TOKEN_RE = /(--[^\n]*)|(\/\*[\s\S]*?\*\/)|('(?:[^']|'')*')|(@\w+)|(\?)|(\b\d+\.?\d*\b)|([A-Za-z_]\w*)|([()=<>,.;+\-*/%])/g;
+
+function escapeHtml(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function highlightSql(text) {
+  let out = '';
+  let lastIndex = 0;
+  let m;
+  SQL_TOKEN_RE.lastIndex = 0;
+  while ((m = SQL_TOKEN_RE.exec(text))) {
+    if (m.index > lastIndex) out += escapeHtml(text.slice(lastIndex, m.index));
+    const [full, comment1, comment2, str, atVar, qmark, num, word, punct] = m;
+    if (comment1 || comment2) out += `<span class="sql-comment">${escapeHtml(full)}</span>`;
+    else if (str) out += `<span class="sql-string">${escapeHtml(full)}</span>`;
+    else if (atVar) out += `<span class="sql-var">${escapeHtml(full)}</span>`;
+    else if (qmark) out += `<span class="sql-placeholder">${escapeHtml(full)}</span>`;
+    else if (num) out += `<span class="sql-number">${escapeHtml(full)}</span>`;
+    else if (word) {
+      const upper = full.toUpperCase();
+      if (SQL_KEYWORDS.has(upper)) out += `<span class="sql-keyword">${escapeHtml(full)}</span>`;
+      else if (SQL_TYPES.has(upper)) out += `<span class="sql-type">${escapeHtml(full)}</span>`;
+      else out += escapeHtml(full);
+    } else if (punct) out += `<span class="sql-punct">${escapeHtml(full)}</span>`;
+    lastIndex = SQL_TOKEN_RE.lastIndex;
+  }
+  out += escapeHtml(text.slice(lastIndex));
+  // A trailing newline needs an extra blank line to render at the same
+  // height a textarea would show for it -- otherwise the highlight
+  // overlay ends up one line short and drifts out of sync while typing.
+  return out + '\n';
+}
+
+// Rebuilds a SQL editor's line-number gutter from its current text --
+// one line-number <div> per '\n'-split line, same count highlightSql's
+// own trailing-newline handling implies. Shared by the Queries and
+// Verbs tabs' SQL editors.
+function refreshSqlGutter(gutterEl, text) {
+  const lineCount = text.split('\n').length;
+  let html = '';
+  for (let i = 1; i <= lineCount; i++) html += `<div>${i}</div>`;
+  gutterEl.innerHTML = html;
+}
+
+const qSqlHighlightCode = document.getElementById('q-sql-highlight-code');
+const qSqlHighlight = document.getElementById('q-sql-highlight');
+const qGutter = document.getElementById('q-gutter');
+
+function refreshQSqlHighlight() {
+  qSqlHighlightCode.innerHTML = highlightSql(qSql.value);
+  refreshSqlGutter(qGutter, qSql.value);
+}
+
+function setQSqlValue(text) {
+  qSql.value = text;
+  refreshQSqlHighlight();
+}
+
+// --- Queries tab: sidebar file list + topbar + editor -----------------
+const qListEl = document.getElementById('q-list');
+const qSearch = document.getElementById('q-search');
+const qSql = document.getElementById('q-sql');
+const qStatus = document.getElementById('q-status');
+const qFilename = document.getElementById('q-filename');
+const qDirtyBadge = document.getElementById('q-dirty-badge');
+const qDirtyText = document.getElementById('q-dirty-text');
+const qCursorPos = document.getElementById('q-cursor-pos');
+const qVerbBtn = document.getElementById('q-verb-btn');
+const qUnverbBtn = document.getElementById('q-unverb-btn');
+const qMoreBtn = document.getElementById('q-more-btn');
+const qMoreMenu = document.getElementById('q-more-menu');
+let qCurrentName = null;
+let qListLoaded = false;
+let qVerbNames = new Set();
+let qQueries = []; // [{name, updated}]
+let qFilterText = '';
+let qSavedValue = ''; // last saved/loaded SQL -- diffed against qSql.value for the dirty badge
+
+function updateVerbButtons() {
+  const isVerb = qCurrentName && qVerbNames.has(qCurrentName);
+  qVerbBtn.style.display = isVerb ? 'none' : '';
+  qUnverbBtn.style.display = isVerb ? '' : 'none';
+}
+
+function relativeTime(unixSeconds) {
+  if (!unixSeconds) return '';
+  const deltaMs = Date.now() - unixSeconds * 1000;
+  const mins = Math.floor(deltaMs / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `Updated ${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Updated ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `Updated ${days}d ago`;
+}
+
+function renderQList() {
+  const q = qFilterText.trim().toLowerCase();
+  qListEl.innerHTML = '';
+  const matching = qQueries.filter((item) => !q || item.name.toLowerCase().includes(q));
+  if (!matching.length) {
+    const empty = document.createElement('div');
+    empty.className = 'q-list-empty';
+    empty.textContent = qQueries.length ? 'No queries match your search.' : 'No queries yet -- click New Query to create one.';
+    qListEl.appendChild(empty);
+    return;
+  }
+  for (const item of matching) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'q-list-item' + (item.name === qCurrentName ? ' active' : '');
+    btn.innerHTML = `
+      <svg class="tb-icon" viewBox="0 0 20 20"><path d="M6 2.5h5.5L15 6v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-13a1 1 0 0 1 1-1z"/><path d="M11.5 2.5V6H15"/></svg>
+      <span class="q-list-item-body">
+        <span class="q-list-item-name">${escapeHtml(item.name)}.sql</span>
+        <span class="q-list-item-meta">${escapeHtml(relativeTime(item.updated))}</span>
+      </span>
+      ${qVerbNames.has(item.name) ? '<span class="q-verb-badge">Verb</span>' : ''}
+    `;
+    btn.addEventListener('click', () => loadQuery(item.name));
+    qListEl.appendChild(btn);
+  }
+}
+
+qSearch.addEventListener('input', (e) => {
+  qFilterText = e.target.value;
+  renderQList();
+});
+
+async function refreshQueryList(selectName) {
+  qListLoaded = true;
+  const res = await fetch('/api/queries');
+  const data = await res.json();
+  qVerbNames = new Set(data.verbs || []);
+  qQueries = data.queries || [];
+  const names = qQueries.map((q) => q.name);
+  renderQList();
+  const toSelect = (selectName && names.includes(selectName)) ? selectName : names[0];
+  if (toSelect) {
+    await loadQuery(toSelect);
+  } else {
+    qCurrentName = null;
+    setQSqlValue('');
+    qFilename.textContent = 'No query selected';
+    qDirtyBadge.hidden = true;
+    qStatus.textContent = 'No queries yet -- click New Query to create one.';
+    updateVerbButtons();
+    refreshQParamsFor(null);
+  }
+}
+
+function updateQDirtyBadge() {
+  const dirty = qSql.value !== qSavedValue;
+  qDirtyBadge.hidden = !qCurrentName;
+  qDirtyBadge.classList.toggle('is-dirty', dirty);
+  qDirtyText.textContent = dirty ? 'Unsaved' : 'Saved';
+}
+
+async function loadQuery(name) {
+  const res = await fetch(`/api/queries/${encodeURIComponent(name)}`);
+  const body = await res.json();
+  if (!res.ok) {
+    qStatus.textContent = 'Error loading query: ' + body.error;
+    return;
+  }
+  qCurrentName = name;
+  qSavedValue = body.sql;
+  setQSqlValue(body.sql);
+  qFilename.textContent = `${name}.sql`;
+  updateQDirtyBadge();
+  qStatus.textContent = `Loaded ${name}.sql`;
+  updateVerbButtons();
+  renderQList();
+  setQResultsView('<div class="q-results-empty">Run a query to see results here.</div>');
+  refreshQParamsFor(name);
+}
+
+function validQueryName(name) {
+  return /^[A-Za-z0-9_-]+$/.test(name);
+}
+
+qSql.addEventListener('input', () => {
+  refreshQSqlHighlight();
+  updateQDirtyBadge();
+});
+qSql.addEventListener('scroll', () => {
+  qSqlHighlight.scrollTop = qSql.scrollTop;
+  qSqlHighlight.scrollLeft = qSql.scrollLeft;
+  qGutter.scrollTop = qSql.scrollTop;
+});
+
+// Ln/Col readout -- recomputed from selectionStart on every event that
+// could move the caret (typing, clicking, arrow keys, select-all, etc.)
+function updateQCursorPos() {
+  const pos = qSql.selectionStart;
+  const before = qSql.value.slice(0, pos);
+  const lines = before.split('\n');
+  qCursorPos.textContent = `Ln ${lines.length}, Col ${lines[lines.length - 1].length + 1}`;
+}
+for (const evt of ['input', 'click', 'keyup', 'select']) {
+  qSql.addEventListener(evt, updateQCursorPos);
+}
+
+// "..." overflow menu -- opens on click, closes on an outside click or Escape.
+qMoreBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  qMoreMenu.hidden = !qMoreMenu.hidden;
+});
+document.addEventListener('click', (e) => {
+  if (!qMoreMenu.hidden && !e.target.closest('.q-more-wrap')) qMoreMenu.hidden = true;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') qMoreMenu.hidden = true;
+});
+
+document.getElementById('q-new-btn').addEventListener('click', async () => {
+  const name = prompt('New query name (no .sql extension):');
+  if (!name) return;
+  if (!validQueryName(name)) {
+    alert('Name must be letters, digits, underscore, or hyphen only.');
+    return;
+  }
+  const res = await fetch(`/api/queries/${encodeURIComponent(name)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: '-- new query\n'})
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    qStatus.textContent = 'Error creating query: ' + body.error;
+    return;
+  }
+  await refreshQueryList(name);
+});
+
+document.getElementById('q-rename-btn').addEventListener('click', async () => {
+  qMoreMenu.hidden = true;
+  if (!qCurrentName) {
+    qStatus.textContent = 'Nothing loaded to rename.';
+    return;
+  }
+  const newName = prompt('New name (no .sql extension):', qCurrentName);
+  if (!newName || newName === qCurrentName) return;
+  if (!validQueryName(newName)) {
+    alert('Name must be letters, digits, underscore, or hyphen only.');
+    return;
+  }
+  const saveRes = await fetch(`/api/queries/${encodeURIComponent(newName)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: qSql.value})
+  });
+  if (!saveRes.ok) {
+    qStatus.textContent = 'Error renaming: ' + (await saveRes.json()).error;
+    return;
+  }
+  await fetch(`/api/queries/${encodeURIComponent(qCurrentName)}`, {method: 'DELETE'});
+  await refreshQueryList(newName);
+});
+
+document.getElementById('q-save-btn').addEventListener('click', async () => {
+  if (!qCurrentName) {
+    qStatus.textContent = 'Nothing loaded -- click New Query first.';
+    return;
+  }
+  const res = await fetch(`/api/queries/${encodeURIComponent(qCurrentName)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: qSql.value})
+  });
+  const body = await res.json();
+  if (res.ok) {
+    qSavedValue = qSql.value;
+    updateQDirtyBadge();
+    qStatus.textContent = `Saved ${qCurrentName}.sql`;
+    // Refreshes this item's "Updated Xd ago" meta without losing scroll
+    // position or the search filter, unlike a full refreshQueryList.
+    const item = qQueries.find((q) => q.name === qCurrentName);
+    if (item) item.updated = Date.now() / 1000;
+    renderQList();
+  } else {
+    qStatus.textContent = 'Error saving: ' + body.error;
+  }
+});
+
+document.getElementById('q-delete-btn').addEventListener('click', async () => {
+  qMoreMenu.hidden = true;
+  if (!qCurrentName) return;
+  if (!confirm(`Delete ${qCurrentName}.sql? This cannot be undone.`)) return;
+  const res = await fetch(`/api/queries/${encodeURIComponent(qCurrentName)}`, {method: 'DELETE'});
+  const body = await res.json();
+  if (!res.ok) {
+    qStatus.textContent = 'Error deleting: ' + body.error;
+    return;
+  }
+  await refreshQueryList();
+});
+
+// A verb is this query, unmodified on disk, ALSO promoted to its own
+// labeled/colored palette pill in the Flow Editor (see
+// flow_blocks.build_verb_step_types) -- save first so what gets
+// promoted is exactly what's in the editor right now.
+document.getElementById('q-verb-btn').addEventListener('click', async () => {
+  qMoreMenu.hidden = true;
+  if (!qCurrentName) {
+    qStatus.textContent = 'Nothing loaded -- click New Query first.';
+    return;
+  }
+  const saveRes = await fetch(`/api/queries/${encodeURIComponent(qCurrentName)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: qSql.value})
+  });
+  if (!saveRes.ok) {
+    qStatus.textContent = 'Error saving before promoting: ' + (await saveRes.json()).error;
+    return;
+  }
+  qSavedValue = qSql.value;
+  updateQDirtyBadge();
+  const res = await fetch(`/api/queries/${encodeURIComponent(qCurrentName)}/promote-verb`, {method: 'POST'});
+  const body = await res.json();
+  if (!res.ok) {
+    qStatus.textContent = 'Error promoting to verb: ' + body.error;
+    return;
+  }
+  qVerbNames.add(qCurrentName);
+  updateVerbButtons();
+  renderQList();
+  qStatus.textContent = `${qCurrentName} is now a verb -- see it in the Flow Editor's Custom Verbs section.`;
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+document.getElementById('q-unverb-btn').addEventListener('click', async () => {
+  qMoreMenu.hidden = true;
+  if (!qCurrentName) return;
+  if (!confirm(`Remove ${qCurrentName} as a verb? The query itself is unaffected.`)) return;
+  const res = await fetch(`/api/verbs/${encodeURIComponent(qCurrentName)}`, {method: 'DELETE'});
+  const body = await res.json();
+  if (!res.ok) {
+    qStatus.textContent = 'Error removing verb: ' + body.error;
+    return;
+  }
+  qVerbNames.delete(qCurrentName);
+  updateVerbButtons();
+  renderQList();
+  qStatus.textContent = `${qCurrentName} is no longer a verb.`;
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+// --- Queries tab: Run (against a named ODBC connection) + Results/Params ---
+// Runs whatever's currently in the editor (see api_run_sql -- saved or
+// not), against whichever connection is picked from the chevron dropdown.
+// SCRAML has no query-execution engine of its own beyond this -- see
+// engine/db.py's pyodbc wrapper -- there's no flow/Appium runner here,
+// just "does this SQL work against a real DB".
+const qRunBtn = document.getElementById('q-run-btn');
+const qConnChevronBtn = document.getElementById('q-conn-chevron-btn');
+const qConnMenu = document.getElementById('q-conn-menu');
+const qConnListEl = document.getElementById('q-conn-list');
+const qResultsView = document.getElementById('q-results-view');
+const qParamsView = document.getElementById('q-params-view');
+const qParamsList = document.getElementById('q-params-list');
+let qConnections = [];
+let qSelectedConnection = null;
+let qCurrentParams = []; // [{name, label}] for qCurrentName's '?' placeholders
+let qParamValues = {}; // name -> typed value, keyed across query switches by name
+
+async function refreshConnections() {
+  const res = await fetch('/api/connections');
+  const data = await res.json();
+  qConnections = data.connections || [];
+  if (qSelectedConnection && !qConnections.some((c) => c.name === qSelectedConnection)) {
+    qSelectedConnection = null;
+  }
+  if (!qSelectedConnection && qConnections.length) qSelectedConnection = qConnections[0].name;
+  renderQConnList();
+}
+
+function renderQConnList() {
+  qConnListEl.innerHTML = '';
+  if (!qConnections.length) {
+    const empty = document.createElement('div');
+    empty.className = 'q-conn-empty';
+    empty.textContent = 'No connections yet -- add one below.';
+    qConnListEl.appendChild(empty);
+    return;
+  }
+  for (const conn of qConnections) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'q-conn-item' + (conn.name === qSelectedConnection ? ' selected' : '');
+    btn.innerHTML = `
+      <svg class="tb-icon q-conn-check" viewBox="0 0 20 20" style="visibility:${conn.name === qSelectedConnection ? 'visible' : 'hidden'}"><path d="M4 10l4 4 8-8"/></svg>
+      <span>${escapeHtml(conn.name)}</span>
+    `;
+    btn.addEventListener('click', () => {
+      qSelectedConnection = conn.name;
+      qConnMenu.hidden = true;
+      renderQConnList();
+    });
+    qConnListEl.appendChild(btn);
+  }
+}
+
+qConnChevronBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  qConnMenu.hidden = !qConnMenu.hidden;
+});
+document.addEventListener('click', (e) => {
+  if (!qConnMenu.hidden && !e.target.closest('.q-run-split')) qConnMenu.hidden = true;
+});
+
+function setQResultsView(html) {
+  qResultsView.innerHTML = html;
+}
+
+async function runCurrentQuery() {
+  if (!qSelectedConnection) {
+    setQResultsView('<div class="q-results-error">No connection selected -- click the chevron next to Run to pick or add one.</div>');
+    return;
+  }
+  setQResultsView('<div class="q-results-running">Running...</div>');
+  const orderedParams = qCurrentParams.map((p) => qParamValues[p.name] ?? '');
+  const res = await fetch('/api/run-sql', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: qSql.value, connection: qSelectedConnection, params: orderedParams}),
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    setQResultsView(`<div class="q-results-error">${escapeHtml(body.error || 'Query failed')}</div>`);
+    return;
+  }
+  if (!body.columns.length) {
+    setQResultsView(`<div class="q-results-meta">${body.row_count} row(s) affected -- ${body.duration_ms}ms</div><div class="q-results-empty">No result set returned.</div>`);
+    return;
+  }
+  let html = `<div class="q-results-meta">${body.row_count} row(s) -- ${body.duration_ms}ms</div>`;
+  html += '<div class="q-results-table-wrap"><table class="q-results-table"><thead><tr>';
+  for (const col of body.columns) html += `<th>${escapeHtml(col)}</th>`;
+  html += '</tr></thead><tbody>';
+  for (const row of body.rows) {
+    html += '<tr>' + row.map((v) => `<td>${v === null ? '<em>null</em>' : escapeHtml(String(v))}</td>`).join('') + '</tr>';
+  }
+  html += '</tbody></table></div>';
+  setQResultsView(html);
+}
+
+qRunBtn.addEventListener('click', runCurrentQuery);
+
+// --- Drag handle between the SQL editor and the Results panel -------
+// .q-editor-col is flex: 1 (fills whatever's left); .q-results-panel
+// has a concrete height (260px by default, see its CSS) -- dragging
+// just adjusts that height directly, and the editor's flex:1 absorbs
+// the difference on its own, no need to touch it.
+(function initQSplitDrag() {
+  const handle = document.getElementById('q-resize-handle');
+  const resultsPanel = document.querySelector('#tab-queries .q-results-panel');
+  const body = document.querySelector('#tab-queries .q-body');
+  if (!handle || !resultsPanel || !body) return;
+
+  const MIN_RESULTS_HEIGHT = 120;
+  const MIN_EDITOR_HEIGHT = 100;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    handle.classList.add('dragging');
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const startY = e.clientY;
+    const startResultsHeight = resultsPanel.getBoundingClientRect().height;
+    const maxResultsHeight = body.getBoundingClientRect().height - MIN_EDITOR_HEIGHT;
+
+    function onMove(moveEvent) {
+      let resultsHeight = startResultsHeight - (moveEvent.clientY - startY);
+      resultsHeight = Math.max(MIN_RESULTS_HEIGHT, Math.min(maxResultsHeight, resultsHeight));
+      resultsPanel.style.height = `${resultsHeight}px`;
+    }
+    function onUp() {
+      handle.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+})();
+
+// --- Results/Params sub-tabs ---
+for (const tabBtn of document.querySelectorAll('.q-results-tab')) {
+  tabBtn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll('.q-results-tab')) b.classList.remove('active');
+    tabBtn.classList.add('active');
+    const isParams = tabBtn.dataset.rtab === 'params';
+    qResultsView.hidden = isParams;
+    qParamsView.hidden = !isParams;
+  });
+}
+
+function renderQParams() {
+  qParamsList.innerHTML = '';
+  if (!qCurrentParams.length) {
+    const empty = document.createElement('div');
+    empty.className = 'q-params-empty';
+    empty.textContent = "This query has no '?' placeholders.";
+    qParamsList.appendChild(empty);
+    return;
+  }
+  for (const p of qCurrentParams) {
+    const row = document.createElement('div');
+    row.className = 'q-param-row';
+    const label = document.createElement('div');
+    label.className = 'q-param-row-label';
+    label.innerHTML = `<div class="q-param-item-name">${escapeHtml(p.name)}</div><div class="q-param-item-label">${escapeHtml(p.label)}</div>`;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = qParamValues[p.name] ?? '';
+    input.addEventListener('input', () => { qParamValues[p.name] = input.value; });
+    row.append(label, input);
+    qParamsList.appendChild(row);
+  }
+}
+
+async function refreshQParamsFor(name) {
+  qParamValues = {};
+  if (!name) {
+    qCurrentParams = [];
+    renderQParams();
+    return;
+  }
+  const res = await fetch(`/api/queries/${encodeURIComponent(name)}/params`);
+  const body = await res.json();
+  qCurrentParams = body.params || [];
+  renderQParams();
+}
+
+// --- Manage Connections modal ---
+const qConnOverlay = document.getElementById('q-conn-overlay');
+const qConnRows = document.getElementById('q-conn-rows');
+
+function connRowHtml(conn) {
+  const name = conn.name || '';
+  const str = conn.connection_string || '';
+  return `
+    <div class="q-conn-row-top">
+      <input type="text" class="q-conn-name" placeholder="Connection name" value="${escapeHtml(name)}">
+      <input type="text" class="q-conn-str" placeholder="ODBC connection string" value="${escapeHtml(str)}">
+    </div>
+    <div class="q-conn-row-actions">
+      <button type="button" class="q-conn-save-row">Save</button>
+      <button type="button" class="q-conn-test-row">Test</button>
+      <button type="button" class="q-conn-delete-row btn-danger">Delete</button>
+      <span class="q-conn-test-result"></span>
+    </div>
+  `;
+}
+
+function wireConnRow(rowEl, existingName) {
+  const nameInput = rowEl.querySelector('.q-conn-name');
+  const strInput = rowEl.querySelector('.q-conn-str');
+  const testResult = rowEl.querySelector('.q-conn-test-result');
+  let savedName = existingName || null;
+
+  rowEl.querySelector('.q-conn-save-row').addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    const connection_string = strInput.value.trim();
+    if (!name || !connection_string) {
+      testResult.textContent = 'Name and connection string are both required.';
+      testResult.className = 'q-conn-test-result fail';
+      return;
+    }
+    if (savedName && savedName !== name) {
+      await fetch(`/api/connections/${encodeURIComponent(savedName)}`, {method: 'DELETE'});
+    }
+    const res = await fetch('/api/connections', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name, connection_string}),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      testResult.textContent = body.error;
+      testResult.className = 'q-conn-test-result fail';
+      return;
+    }
+    savedName = name;
+    testResult.textContent = 'Saved.';
+    testResult.className = 'q-conn-test-result ok';
+    await refreshConnections();
+  });
+
+  rowEl.querySelector('.q-conn-test-row').addEventListener('click', async () => {
+    if (!savedName) {
+      testResult.textContent = 'Save this connection first, then Test.';
+      testResult.className = 'q-conn-test-result fail';
+      return;
+    }
+    testResult.textContent = 'Testing...';
+    testResult.className = 'q-conn-test-result';
+    const res = await fetch(`/api/connections/${encodeURIComponent(savedName)}/test`, {method: 'POST'});
+    const body = await res.json();
+    testResult.textContent = body.ok ? 'Connected successfully.' : (body.error || 'Connection failed.');
+    testResult.className = 'q-conn-test-result ' + (body.ok ? 'ok' : 'fail');
+  });
+
+  rowEl.querySelector('.q-conn-delete-row').addEventListener('click', async () => {
+    if (savedName) {
+      if (!confirm(`Delete connection '${savedName}'?`)) return;
+      await fetch(`/api/connections/${encodeURIComponent(savedName)}`, {method: 'DELETE'});
+      await refreshConnections();
+    }
+    rowEl.remove();
+  });
+}
+
+async function openConnModal() {
+  qConnMenu.hidden = true;
+  const res = await fetch('/api/connections');
+  const data = await res.json();
+  qConnRows.innerHTML = '';
+  for (const conn of (data.connections || [])) {
+    const rowEl = document.createElement('div');
+    rowEl.className = 'q-conn-row';
+    rowEl.innerHTML = connRowHtml(conn);
+    wireConnRow(rowEl, conn.name);
+    qConnRows.appendChild(rowEl);
+  }
+  qConnOverlay.hidden = false;
+}
+
+document.getElementById('q-manage-conn-btn').addEventListener('click', openConnModal);
+document.getElementById('q-conn-add-btn').addEventListener('click', () => {
+  const rowEl = document.createElement('div');
+  rowEl.className = 'q-conn-row';
+  rowEl.innerHTML = connRowHtml({name: '', connection_string: ''});
+  wireConnRow(rowEl, null);
+  qConnRows.appendChild(rowEl);
+});
+document.getElementById('q-conn-close-btn').addEventListener('click', () => { qConnOverlay.hidden = true; });
+qConnOverlay.addEventListener('click', (e) => { if (e.target.id === 'q-conn-overlay') qConnOverlay.hidden = true; });
+
+refreshConnections();
+
+// --- Verbs tab: edit a promoted verb's SQL + its display label/palette
+// section (queries/verbs/<name>.sql plus a queries/verbs/<name>.meta.json
+// sidecar -- see app.py's load_verb_meta/save_verb_meta). Unlike the
+// Queries tab this only ever lists already-promoted verbs; promoting a
+// query into one still happens from the Queries tab's "Save as Verb".
+const vSelect = document.getElementById('v-select');
+const vLabel = document.getElementById('v-label');
+const vSection = document.getElementById('v-section');
+const vSql = document.getElementById('v-sql');
+const vStatus = document.getElementById('v-status');
+const vSqlHighlightCode = document.getElementById('v-sql-highlight-code');
+const vSqlHighlight = document.getElementById('v-sql-highlight');
+const vGutter = document.getElementById('v-gutter');
+let vCurrentName = null;
+let vVerbs = [];
+
+function refreshVSqlHighlight() {
+  vSqlHighlightCode.innerHTML = highlightSql(vSql.value);
+  refreshSqlGutter(vGutter, vSql.value);
+}
+
+function setVSqlValue(text) {
+  vSql.value = text;
+  refreshVSqlHighlight();
+}
+
+async function refreshVerbList(selectName) {
+  const res = await fetch('/api/verbs');
+  const data = await res.json();
+  vVerbs = data.verbs || [];
+  vSelect.innerHTML = '';
+  if (!vVerbs.length) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = 'No verbs yet -- promote a query from the Queries tab (Save as Verb)';
+    opt.disabled = true;
+    opt.selected = true;
+    vSelect.appendChild(opt);
+  }
+  for (const v of vVerbs) {
+    const opt = document.createElement('option');
+    opt.value = v.name;
+    opt.textContent = v.label ? `${v.name} (${v.label})` : v.name;
+    vSelect.appendChild(opt);
+  }
+  const toSelect = (selectName && vVerbs.some(v => v.name === selectName)) ? selectName : (vVerbs[0] && vVerbs[0].name);
+  if (toSelect) {
+    vSelect.value = toSelect;
+    loadVerb(toSelect);
+  } else {
+    vCurrentName = null;
+    vLabel.value = '';
+    vSection.value = '';
+    setVSqlValue('');
+    vStatus.textContent = '';
+  }
+}
+
+function loadVerb(name) {
+  const v = vVerbs.find(v => v.name === name);
+  if (!v) return;
+  vCurrentName = name;
+  vLabel.value = v.label || '';
+  vSection.value = v.section || '';
+  setVSqlValue(v.sql || '');
+  vStatus.textContent = `Loaded ${name}`;
+}
+
+vSelect.addEventListener('change', () => loadVerb(vSelect.value));
+vSql.addEventListener('input', refreshVSqlHighlight);
+vSql.addEventListener('scroll', () => {
+  vSqlHighlight.scrollTop = vSql.scrollTop;
+  vSqlHighlight.scrollLeft = vSql.scrollLeft;
+  vGutter.scrollTop = vSql.scrollTop;
+});
+
+document.getElementById('v-save-btn').addEventListener('click', async () => {
+  if (!vCurrentName) {
+    vStatus.textContent = 'Nothing loaded to save.';
+    return;
+  }
+  const res = await fetch(`/api/verbs/${encodeURIComponent(vCurrentName)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({sql: vSql.value, label: vLabel.value, section: vSection.value})
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    vStatus.textContent = 'Error saving: ' + body.error;
+    return;
+  }
+  vStatus.textContent = `Saved ${vCurrentName}`;
+  await refreshVerbList(vCurrentName);
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+document.getElementById('v-unverb-btn').addEventListener('click', async () => {
+  if (!vCurrentName) return;
+  if (!confirm(`Remove ${vCurrentName} as a verb? The underlying query (if any) is unaffected.`)) return;
+  const res = await fetch(`/api/verbs/${encodeURIComponent(vCurrentName)}`, {method: 'DELETE'});
+  const body = await res.json();
+  if (!res.ok) {
+    vStatus.textContent = 'Error removing verb: ' + body.error;
+    return;
+  }
+  qVerbNames.delete(vCurrentName);
+  updateVerbButtons();
+  await refreshVerbList();
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+// --- Blocks tab: full field editor over STEP_TYPES itself. Nothing in
+// the Flow Editor palette is special-cased Python -- tap/wait/group/
+// assert_sql are exactly as arbitrary as a hand-added custom block, so
+// every one of them is equally editable/deletable here (see app.py's
+// load_block_types/save_block_types -- edits persist to
+// config/step_types.json, copy-on-first-write). Saving here fires
+// step-types-changed, same as promoting/removing a verb, so the Flow
+// Editor palette picks the change up live.
+const btPaletteEl = document.getElementById('bt-palette');
+const btPaletteSearch = document.getElementById('bt-palette-search');
+const btKey = document.getElementById('bt-key');
+const btSection = document.getElementById('bt-section');
+const btDescription = document.getElementById('bt-description');
+const btContainer = document.getElementById('bt-container');
+const btFieldsEl = document.getElementById('bt-fields');
+const btStatus = document.getElementById('bt-status');
+let btBlockTypes = {};
+let btFieldKinds = [];
+let btCurrentKey = null;
+let btFields = [];
+let btPaletteQuery = '';
+const btPaletteCollapsed = new Set();
+
+// "select_modal" -> "Select Modal" -- same convention flow_editor.js's
+// own prettifyLabel uses for palette chip text, duplicated here since
+// that file is a self-contained IIFE with nothing exported.
+function prettifyBtLabel(s) {
+  return s.split(/[_\s]+/).filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+// The in-progress form state as a {section, description} pair, keyed by
+// whatever's currently typed into bt-key -- merged into the palette list
+// on every render so a block being edited (even one not saved yet) shows
+// up live, under whatever section it's currently typed into, instead of
+// only appearing after a Save round-trip.
+function currentLiveBlockType() {
+  const key = btKey.value.trim();
+  if (!key) return null;
+  return [key, { section: btSection.value.trim() || 'Custom Blocks', description: btDescription.value }];
+}
+
+function renderBtPalette() {
+  const merged = {};
+  for (const [key, spec] of Object.entries(btBlockTypes)) merged[key] = spec;
+  const live = currentLiveBlockType();
+  if (live) merged[live[0]] = { ...(merged[live[0]] || {}), ...live[1] };
+
+  btPaletteEl.innerHTML = '';
+  const sections = [...new Set(Object.values(merged).map((s) => s.section || 'Custom Blocks'))].sort();
+  for (const section of sections) {
+    const entries = Object.entries(merged)
+      .filter(([, s]) => (s.section || 'Custom Blocks') === section)
+      .sort((a, b) => a[0].localeCompare(b[0]));
+    if (!entries.length) continue;
+
+    const group = document.createElement('div');
+    group.className = 'fe-palette-group';
+    if (btPaletteCollapsed.has(section)) group.classList.add('collapsed');
+
+    const heading = document.createElement('button');
+    heading.type = 'button';
+    heading.className = 'fe-palette-section';
+    heading.textContent = section;
+    heading.addEventListener('click', () => {
+      if (btPaletteCollapsed.has(section)) btPaletteCollapsed.delete(section);
+      else btPaletteCollapsed.add(section);
+      renderBtPalette();
+    });
+
+    const body = document.createElement('div');
+    body.className = 'fe-palette-group-body';
+    for (const [key, spec] of entries) {
+      const isUnsaved = !btBlockTypes[key];
+      const chip = document.createElement('div');
+      chip.className = 'fe-chip bt-chip';
+      chip.dataset.section = section;
+      if (key === btCurrentKey || (live && key === live[0])) chip.classList.add('bt-chip-active');
+      if (isUnsaved) chip.classList.add('bt-chip-unsaved');
+      const label = document.createElement('span');
+      label.textContent = prettifyBtLabel(key).toUpperCase() + (isUnsaved ? ' (unsaved)' : '');
+      chip.appendChild(label);
+      if (spec.description) chip.title = spec.description;
+      chip.addEventListener('click', () => { if (btBlockTypes[key]) loadBlockType(key); });
+      body.appendChild(chip);
+    }
+
+    group.append(heading, body);
+    btPaletteEl.appendChild(group);
+  }
+  applyBtPaletteFilter();
+}
+
+function applyBtPaletteFilter() {
+  const q = btPaletteQuery.trim().toLowerCase();
+  for (const group of btPaletteEl.querySelectorAll('.fe-palette-group')) {
+    const chips = [...group.querySelectorAll(':scope > .fe-palette-group-body > .fe-chip')];
+    let anyMatch = false;
+    for (const chip of chips) {
+      const match = !q || chip.textContent.toLowerCase().includes(q);
+      chip.style.display = match ? '' : 'none';
+      if (match) anyMatch = true;
+    }
+    group.style.display = q && !anyMatch ? 'none' : '';
+    group.classList.toggle('force-open', !!q && anyMatch);
+  }
+}
+
+btPaletteSearch.addEventListener('input', (e) => {
+  btPaletteQuery = e.target.value;
+  applyBtPaletteFilter();
+});
+
+for (const el of [btKey, btSection, btDescription]) {
+  el.addEventListener('input', renderBtPalette);
+}
+
+function parseDefaultForKind(raw, kind) {
+  if (raw === '' || raw === null || raw === undefined) return undefined;
+  if (kind === 'bool') return raw === 'true' || raw === true;
+  if (kind === 'int') { const n = parseInt(raw, 10); return Number.isNaN(n) ? undefined : n; }
+  if (kind === 'float') { const n = parseFloat(raw); return Number.isNaN(n) ? undefined : n; }
+  return raw;
+}
+
+function defaultToInputValue(value) {
+  return value === undefined || value === null ? '' : String(value);
+}
+
+function renderBtFields() {
+  btFieldsEl.innerHTML = '';
+  if (!btFields.length) {
+    const empty = document.createElement('div');
+    empty.className = 'bt-fields-empty';
+    empty.textContent = 'No fields yet -- click + Add Field, or leave empty for a block with no configurable fields (e.g. Back).';
+    btFieldsEl.appendChild(empty);
+    return;
+  }
+  btFields.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'bt-field-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text'; nameInput.placeholder = 'field_name'; nameInput.value = f.name || '';
+    nameInput.addEventListener('input', () => { btFields[i].name = nameInput.value; });
+
+    const kindSelect = document.createElement('select');
+    for (const k of btFieldKinds) {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k;
+      kindSelect.appendChild(opt);
+    }
+    kindSelect.value = f.kind || 'text';
+    kindSelect.addEventListener('change', () => {
+      btFields[i].kind = kindSelect.value;
+      renderBtFields();
+    });
+
+    const defaultInput = document.createElement('input');
+    defaultInput.type = 'text'; defaultInput.placeholder = 'default';
+    defaultInput.value = defaultToInputValue(f.default);
+    defaultInput.addEventListener('input', () => { btFields[i]._defaultRaw = defaultInput.value; });
+
+    const choicesInput = document.createElement('input');
+    choicesInput.type = 'text'; choicesInput.placeholder = 'a, b, c';
+    choicesInput.value = (f.choices || []).join(', ');
+    choicesInput.disabled = !(f.kind === 'select' || f.kind === 'combo');
+    choicesInput.addEventListener('input', () => { btFields[i]._choicesRaw = choicesInput.value; });
+
+    const helpInput = document.createElement('input');
+    helpInput.type = 'text'; helpInput.placeholder = 'Help text shown behind the (i) icon';
+    helpInput.value = f.help || '';
+    helpInput.addEventListener('input', () => { btFields[i].help = helpInput.value; });
+
+    const optWrap = document.createElement('div');
+    const optCheckbox = document.createElement('input');
+    optCheckbox.type = 'checkbox'; optCheckbox.checked = !!f.optional;
+    optCheckbox.addEventListener('change', () => { btFields[i].optional = optCheckbox.checked; });
+    optWrap.appendChild(optCheckbox);
+
+    const btns = document.createElement('div');
+    btns.className = 'bt-field-row-btns';
+    const upBtn = document.createElement('button');
+    upBtn.type = 'button'; upBtn.textContent = '↑'; upBtn.title = 'Move up'; upBtn.disabled = i === 0;
+    upBtn.addEventListener('click', () => { [btFields[i - 1], btFields[i]] = [btFields[i], btFields[i - 1]]; renderBtFields(); });
+    const downBtn = document.createElement('button');
+    downBtn.type = 'button'; downBtn.textContent = '↓'; downBtn.title = 'Move down'; downBtn.disabled = i === btFields.length - 1;
+    downBtn.addEventListener('click', () => { [btFields[i + 1], btFields[i]] = [btFields[i], btFields[i + 1]]; renderBtFields(); });
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button'; removeBtn.textContent = '✕'; removeBtn.title = 'Remove field'; removeBtn.className = 'bt-field-remove';
+    removeBtn.addEventListener('click', () => { btFields.splice(i, 1); renderBtFields(); });
+    btns.append(upBtn, downBtn, removeBtn);
+
+    row.append(nameInput, kindSelect, defaultInput, choicesInput, helpInput, optWrap, btns);
+    btFieldsEl.appendChild(row);
+  });
+}
+
+document.getElementById('bt-add-field-btn').addEventListener('click', () => {
+  btFields.push({ name: '', kind: 'text', help: '', optional: true });
+  renderBtFields();
+});
+
+async function refreshBlockTypeList(selectKey) {
+  const res = await fetch('/api/block-types');
+  const data = await res.json();
+  btBlockTypes = data.block_types || {};
+  btFieldKinds = data.field_kinds || [];
+  const keys = Object.keys(btBlockTypes).sort();
+  const toSelect = (selectKey && btBlockTypes[selectKey]) ? selectKey
+    : (btCurrentKey && btBlockTypes[btCurrentKey]) ? btCurrentKey
+    : keys[0];
+  if (toSelect) {
+    loadBlockType(toSelect);
+  } else {
+    startNewBlockType();
+  }
+}
+
+function loadBlockType(key) {
+  const spec = btBlockTypes[key];
+  if (!spec) return;
+  btCurrentKey = key;
+  btKey.value = key;
+  btSection.value = spec.section || '';
+  btDescription.value = spec.description || '';
+  btContainer.checked = !!spec.container;
+  btFields = (spec.fields || []).map(f => ({ ...f }));
+  renderBtFields();
+  renderBtPalette();
+  btStatus.textContent = `Loaded ${key}`;
+}
+
+function startNewBlockType() {
+  btCurrentKey = null;
+  btKey.value = '';
+  btSection.value = '';
+  btDescription.value = '';
+  btContainer.checked = false;
+  btFields = [];
+  renderBtFields();
+  renderBtPalette();
+  btStatus.textContent = 'New block -- fill in a key and save.';
+}
+
+document.getElementById('bt-new-btn').addEventListener('click', startNewBlockType);
+
+document.getElementById('bt-save-btn').addEventListener('click', async () => {
+  const key = btKey.value.trim();
+  if (!key) {
+    btStatus.textContent = 'A block key is required.';
+    return;
+  }
+  const fields = btFields.map(f => {
+    // Start from every key the loaded field already had (dynamic_choices,
+    // choice_labels, show_when, virtual, label, display_scale,
+    // allow_multi, ...) -- this editor only exposes a subset of what a
+    // field spec can carry, so anything it doesn't have a control for
+    // must round-trip untouched rather than being silently dropped
+    // (losing e.g. action's dynamic_choices: "actions" would break its
+    // live action-name dropdown).
+    const out = { ...f };
+    delete out._defaultRaw;
+    delete out._choicesRaw;
+    const kind = f.kind || 'text';
+    out.name = (f.name || '').trim();
+    out.kind = kind;
+    if (f.help) out.help = f.help; else delete out.help;
+    if (f.optional) out.optional = true; else delete out.optional;
+    const def = parseDefaultForKind(f._defaultRaw !== undefined ? f._defaultRaw : f.default, kind);
+    if (def !== undefined) out.default = def; else delete out.default;
+    if (kind === 'select' || kind === 'combo') {
+      const raw = f._choicesRaw !== undefined ? f._choicesRaw : (f.choices || []).join(', ');
+      out.choices = raw.split(',').map(s => s.trim()).filter(Boolean);
+    } else {
+      delete out.choices;
+    }
+    return out;
+  });
+  for (const f of fields) {
+    if (!f.name) {
+      btStatus.textContent = 'Every field needs a name.';
+      return;
+    }
+  }
+
+  const res = await fetch(`/api/block-types/${encodeURIComponent(key)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      section: btSection.value,
+      description: btDescription.value,
+      container: btContainer.checked,
+      fields,
+    })
+  });
+  const body = await res.json();
+  if (!res.ok) {
+    btStatus.textContent = 'Error saving: ' + body.error;
+    return;
+  }
+  // Renamed (key changed from what was loaded) -- the old key is a
+  // separate dict entry the backend knows nothing about renaming, so
+  // drop it explicitly rather than leaving a stale duplicate behind.
+  if (btCurrentKey && btCurrentKey !== key) {
+    await fetch(`/api/block-types/${encodeURIComponent(btCurrentKey)}`, {method: 'DELETE'});
+  }
+  btStatus.textContent = `Saved ${key}`;
+  await refreshBlockTypeList(key);
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+document.getElementById('bt-delete-btn').addEventListener('click', async () => {
+  if (!btCurrentKey) {
+    btStatus.textContent = 'Nothing loaded to delete.';
+    return;
+  }
+  if (!confirm(`Delete block type '${btCurrentKey}'? Any flow already using it will show as an unrecognized block.`)) return;
+  const res = await fetch(`/api/block-types/${encodeURIComponent(btCurrentKey)}`, {method: 'DELETE'});
+  const body = await res.json();
+  if (!res.ok) {
+    btStatus.textContent = 'Error deleting: ' + body.error;
+    return;
+  }
+  btStatus.textContent = `Deleted ${btCurrentKey}`;
+  await refreshBlockTypeList();
+  document.dispatchEvent(new CustomEvent('step-types-changed'));
+});
+
+// Restores whichever tab a reload/copied link named -- run last, now
+// that every tab's own init logic (refreshQueryList, qListLoaded, etc.)
+// above is fully declared. Doing this any earlier risked landing on
+// "queries" (or any future tab with its own restore-time logic) before
+// its own `let`/`const`s further down the script had run, which throws
+// (TDZ) and silently kills every listener registered after that point.
+const urlTab = window.FE_URL_STATE.get('tab');
+if (urlTab && document.querySelector(`.tab-btn[data-tab="${urlTab}"]`)) {
+  activateTab(urlTab, { skipUrl: true });
+}
+</script>
+
+</body>
+</html>

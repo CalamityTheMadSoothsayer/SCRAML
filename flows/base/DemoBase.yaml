@@ -1,0 +1,26 @@
+name: DemoBase
+description: ''
+steps:
+- type: back_until
+- type: inject
+  name: after_back
+- type: press_key
+- type: inject
+  name: after_press_key
+- type: tap
+  text: ''
+  control_class: android.widget.EditText
+- type: wait
+  text: ''
+- type: scroll
+- type: wait
+  text: ''
+- type: assert_absent
+  text: ''
+- type: back_until
+- type: inject
+  name: before_assert
+- type: assert_sql
+  name: InventoryIdCountPerTable
+  params:
+  - ''

@@ -1,0 +1,9 @@
+name: DemoFlow
+description: ''
+steps:
+- type: read_sql
+  query: DECLARE @a as int = ?
+  store_as:
+  - a
+  params:
+  - a
