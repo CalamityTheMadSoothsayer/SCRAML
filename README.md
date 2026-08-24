@@ -1,5 +1,8 @@
 # SCRAML
 
+<img width="2534" height="1214" alt="image" src="https://github.com/user-attachments/assets/3daca63c-91d6-4ff3-a775-54b6b76e60ad" />
+
+
 A Scratch-style visual block editor for building arbitrary YAML documents.
 
 Drag blocks from a palette onto a canvas to build a `steps:` list, save it
