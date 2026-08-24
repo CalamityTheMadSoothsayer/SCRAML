@@ -15,9 +15,6 @@ The palette is assembled at runtime from:
   definitions (tap, wait, assert_sql, group, etc.), editable from the
   **Blocks** tab. An edit persists to `config/step_types.json` (created on
   first save); until then the app just uses the built-in table as-is.
-- **`engine/actions.py`** -- a registry of named Python actions (`ACTIONS`
-  dict). Each one shows up in the editor's "Escape hatch" section as an
-  `action` block referencing it by name.
 - **`queries/*.sql`** -- SQL files, each usable from a generic `query`
   block, or "promoted" to its own labeled palette pill (a "verb") via
   `queries/verbs/`, editable from the **Verbs** tab.
