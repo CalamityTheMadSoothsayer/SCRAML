@@ -36,7 +36,7 @@ entirely by editing them in the Blocks tab, no code changes needed.
 
 - **Flow Editor** -- the drag-and-drop canvas: build a flow's `steps:`
   list out of blocks, save/rename/delete flows and base files, lint every
-  flow on disk for dangling base/query/action references.
+  flow on disk for dangling base/query references.
 - **Queries** -- a sidebar of `queries/*.sql` files with a syntax-
   highlighted SQL editor (line numbers, param placeholders). If a named
   ODBC connection is configured, a query can also be run directly against
@@ -84,7 +84,6 @@ provides).
   editor.
 - `engine/db.py` -- thin `pyodbc` wrapper backing the Queries tab's Run
   button.
-- `engine/actions.py` -- the custom-action registry.
 - `flows/` -- example flow and base files.
 - `queries/` -- example SQL files (`queries/select_item_from_table.sql`
   is a placeholder -- point `SCRAML_QUERIES_DIR` at your own directory to

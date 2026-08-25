@@ -623,7 +623,6 @@
   .fe-chip[data-section="Assertions"]                { background: #FF8C1A; }
   .fe-chip[data-section="Auditing"]                  { background: #9966FF; }
   .fe-chip[data-section="Composition"]               { background: #FFAB19; }
-  .fe-chip[data-section="Escape hatch"]              { background: #FF6680; }
   .fe-chip[data-section="Custom Verbs"]              { background: #2E7D6B; }
   .fe-chip[data-section="Base"]                      { background: #8C6FE0; }
   .fe-chip[data-type="__inject__"]                   { background: #e0c060; }
@@ -633,7 +632,6 @@
   li.block[data-section="Assertions"]                { --section-color: #FF8C1A; }
   li.block[data-section="Auditing"]                  { --section-color: #9966FF; }
   li.block[data-section="Composition"]               { --section-color: #FFAB19; }
-  li.block[data-section="Escape hatch"]              { --section-color: #FF6680; }
   li.block[data-section="Custom Verbs"]              { --section-color: #2E7D6B; }
   li.block[data-section="Base"]                      { --section-color: #8C6FE0; }
   li.block[data-type="__inject__"]                   { --section-color: #e0c060; }
@@ -664,9 +662,10 @@
   .bt-meta { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 14px; }
   /* Each field's purpose is only obvious from its placeholder text --
      which disappears the moment it's filled in (e.g. a loaded block
-     shows "action" / "Escape hatch" / "Runs a custom..." with nothing
-     to tell you which is the key vs. the section vs. the description).
-     A small persistent label above each input fixes that. */
+     shows "wait" / "Navigation / interaction" / "Pauses the test..."
+     with nothing to tell you which is the key vs. the section vs. the
+     description). A small persistent label above each input fixes
+     that. */
   .bt-field-group { display: flex; flex-direction: column; gap: 4px; }
   .bt-field-group-label {
     font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
@@ -912,7 +911,7 @@
         <svg class="tb-icon" viewBox="0 0 20 20"><path d="M4 6h12"/><path d="M8 6V4.5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1V6"/><path d="M6.2 6l.8 10.2a1 1 0 0 0 1 .8h4a1 1 0 0 0 1-.8L13.8 6"/><path d="M8.5 9v5M11.5 9v5"/></svg>
         <span>Delete</span>
       </button>
-      <button id="fe-lint-btn" title="Statically checks every flow/base file's own base/query/action references -- no device/Appium involved">
+      <button id="fe-lint-btn" title="Statically checks every flow/base file's own base/query references -- no device/Appium involved">
         <svg class="tb-icon" viewBox="0 0 20 20"><path d="M7.5 3h5a1 1 0 0 1 1 1v.5h-7V4a1 1 0 0 1 1-1z"/><path d="M6.5 4.5h7v11.5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4.5z"/><path d="M8.3 10l1.4 1.4 2.6-3"/></svg>
         <span>Lint All Flows</span>
       </button>
@@ -2337,8 +2336,8 @@ document.getElementById('bt-save-btn').addEventListener('click', async () => {
     // allow_multi, ...) -- this editor only exposes a subset of what a
     // field spec can carry, so anything it doesn't have a control for
     // must round-trip untouched rather than being silently dropped
-    // (losing e.g. action's dynamic_choices: "actions" would break its
-    // live action-name dropdown).
+    // (losing e.g. query's dynamic_choices: "queries" would break its
+    // live SQL-file dropdown).
     const out = { ...f };
     delete out._defaultRaw;
     delete out._choicesRaw;

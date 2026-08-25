@@ -397,14 +397,6 @@ STEP_TYPES: dict[str, dict[str, Any]] = {
             {"name": "key", "kind": "combo", "choices": PRESS_KEY_CHOICES, "optional": True, "default": "ENTER", "help": "The key to press to submit/confirm the entered value."},
         ],
     },
-
-    # --- Escape hatch -------------------------------------------------------
-    "action": {
-        "section": "Escape hatch",
-        "description": "Runs a custom Python action registered in engine/actions.py, for logic none of the other blocks can express.",
-        "container": False,
-        "fields": [{"name": "name", "kind": "select", "choices": [], "dynamic_choices": "actions", "help": "Which registered custom Python action to run (see engine/actions.py) -- for logic the other verbs can't express."}],
-    },
 }
 
 # Not a real step type dispatched by FlowRunner -- only ever appears

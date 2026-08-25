@@ -320,13 +320,6 @@ def api_flows_new():
     return jsonify(envelope)
 
 
-@app.get("/api/actions")
-def api_actions():
-    import engine.actions as actions_module
-
-    return jsonify({"actions": sorted(actions_module.ACTIONS.keys())})
-
-
 # Configurable via SCRAML_QUERIES_DIR so a deployment can point queries
 # somewhere other than the bundled default -- falls back to APP_ROOT /
 # "queries" (a plain relative "queries/" dir next to the exe/source).
@@ -612,13 +605,13 @@ def _lint_all_yaml_files() -> list[tuple[str, Path]]:
 
 
 def lint_flow_steps(
-    steps: list, known_base_injects: dict, known_queries: set, known_actions: set, known_step_types: set
+    steps: list, known_base_injects: dict, known_queries: set, known_step_types: set
 ) -> list[str]:
     """Static checks over one flow's raw step list (recursing into every
     container -- group/loop/base's 'steps', and a base call's 'injects'
     lists) -- catches the "renamed/deleted something, forgot to update
-    every caller" class of bug (a dangling base/query/action reference)
-    before it's hit mid-run, plus the same empty-group/loop check
+    every caller" class of bug (a dangling base/query reference) before
+    it's hit mid-run, plus the same empty-group/loop check
     validate_blocks does for the Flow Editor's own block form. Returns a
     list of human-readable problem strings, empty if none."""
     problems = []
@@ -657,9 +650,6 @@ def lint_flow_steps(
                 if step["name"] not in known_queries:
                     problems.append(f"assert_sql: references missing queries/{step['name']}.sql")
 
-            if step_type == "action" and step.get("name") not in known_actions:
-                problems.append(f"action: references unregistered action {step.get('name')!r}")
-
             walk(step.get("steps") or [])
 
     walk(steps)
@@ -669,12 +659,10 @@ def lint_flow_steps(
 @app.get("/api/lint")
 def api_lint():
     """Dry-run/lint pass over every flow AND base file on disk -- just
-    statically checks every step's references (base file/query/action
-    names, empty group/loop) are actually valid right now. Meant to catch
+    statically checks every step's references (base file/query names,
+    empty group/loop) are actually valid right now. Meant to catch
     "renamed a query, forgot the 3 flows using it" before someone hits it
     later."""
-    import engine.actions as actions_module
-
     known_base_injects = {bf["filename"]: bf["inject_points"] for bf in list_base_files()}
     known_queries = set()
     if QUERIES_DIR.is_dir():
@@ -683,7 +671,6 @@ def api_lint():
         known_queries.update(p.stem for p in QUERIES_WRITE_DIR.glob("*.sql"))
     if VERBS_DIR.is_dir():
         known_queries.update(p.stem for p in VERBS_DIR.glob("*.sql"))
-    known_actions = set(actions_module.ACTIONS.keys())
     known_step_types = set(load_block_types().keys())
 
     results = []
@@ -693,7 +680,7 @@ def api_lint():
         except Exception as exc:
             results.append({"path": rel, "problems": [f"could not parse YAML: {exc}"]})
             continue
-        problems = lint_flow_steps(data.get("steps") or [], known_base_injects, known_queries, known_actions, known_step_types)
+        problems = lint_flow_steps(data.get("steps") or [], known_base_injects, known_queries, known_step_types)
         if problems:
             results.append({"path": rel, "problems": problems})
 

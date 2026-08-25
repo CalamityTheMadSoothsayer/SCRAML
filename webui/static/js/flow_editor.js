@@ -26,7 +26,6 @@
     "Assertions",
     "Auditing",
     "Composition",
-    "Escape hatch",
   ];
 
   let blockIdCounter = 0;
@@ -2164,14 +2163,15 @@
     initUndoRedo();
 
     window.FE_DYNAMIC_CHOICES = {};
-    for (const [key, endpoint] of Object.entries({ actions: "/api/actions", queries: "/api/queries" })) {
-      try {
-        const res = await fetch(endpoint);
-        const data = await res.json();
-        window.FE_DYNAMIC_CHOICES[key] = data[key] || [];
-      } catch (e) {
-        window.FE_DYNAMIC_CHOICES[key] = [];
-      }
+    try {
+      const res = await fetch("/api/queries");
+      const data = await res.json();
+      // /api/queries returns [{name, updated}, ...] (see the Queries
+      // tab's sidebar, which needs the mtime) -- this dropdown only
+      // wants the bare filenames.
+      window.FE_DYNAMIC_CHOICES.queries = (data.queries || []).map((q) => q.name);
+    } catch (e) {
+      window.FE_DYNAMIC_CHOICES.queries = [];
     }
 
     await refreshFlowPicker();
