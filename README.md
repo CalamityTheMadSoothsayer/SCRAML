@@ -1,4 +1,9 @@
-# SCRAML <center><img width="480" alt="image" src="https://github.com/user-attachments/assets/20c9d021-606a-49f8-ad03-cd409893915c" /></center>
+# SCRAML
+
+<p align="center">
+  <img width="480" alt="image" src="https://github.com/user-attachments/assets/20c9d021-606a-49f8-ad03-cd409893915c" />
+</p>
+
 
 
 <img width="2534" height="1214" alt="image" src="https://github.com/user-attachments/assets/3daca63c-91d6-4ff3-a775-54b6b76e60ad" />
